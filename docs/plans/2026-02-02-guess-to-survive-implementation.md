@@ -3019,3 +3019,2913 @@ Phase 2 establishes the core game:
 - Results processing and eliminations
 
 Continue to Phase 3 for Payments implementation.
+
+---
+
+## Phase 3: Payments
+
+### Task 3.1: Stripe Setup
+
+**Files:**
+- Create: `src/lib/stripe.ts`
+- Modify: `.env.example`
+
+**Step 1: Create Stripe account**
+
+Go to https://dashboard.stripe.com
+Create account, enable test mode
+Get publishable key and secret key
+
+**Step 2: Install Stripe SDK**
+
+Run:
+```bash
+pnpm add @stripe/stripe-js
+```
+
+**Step 3: Update env example**
+
+Add to `.env.example`:
+```
+VITE_STRIPE_PUBLISHABLE_KEY=pk_test_xxx
+```
+
+Add actual key to `.env.local`
+
+**Step 4: Create Stripe client**
+
+Create `src/lib/stripe.ts`:
+```ts
+import { loadStripe } from '@stripe/stripe-js'
+
+const stripePromise = loadStripe(
+  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
+)
+
+export { stripePromise }
+```
+
+**Step 5: Commit**
+
+```bash
+git add .
+git commit -m "feat: setup stripe client"
+```
+
+---
+
+### Task 3.2: Stripe Checkout Edge Function
+
+**Files:**
+- Create: `supabase/functions/create-checkout/index.ts`
+
+**Step 1: Create checkout function**
+
+Create `supabase/functions/create-checkout/index.ts`:
+```ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import Stripe from 'https://esm.sh/stripe@13?target=deno'
+
+const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
+  apiVersion: '2023-10-16',
+})
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+serve(async (req) => {
+  try {
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) throw new Error('No authorization header')
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+    // Verify user
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) throw new Error('Unauthorized')
+
+    const { gameId } = await req.json()
+
+    // Get game
+    const { data: game } = await supabase
+      .from('games')
+      .select('*')
+      .eq('id', gameId)
+      .single()
+
+    if (!game) throw new Error('Game not found')
+    if (game.entry_fee <= 0) throw new Error('This is a free game')
+
+    // Calculate total with Stripe fees
+    const entryFee = game.entry_fee
+    const stripeFee = entryFee * 0.029 + 0.25
+    const total = Math.ceil((entryFee + stripeFee) * 100) // Convert to cents
+
+    // Create Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: game.currency.toLowerCase(),
+            product_data: {
+              name: `Entry: ${game.name}`,
+              description: `Join ${game.name} survival game`,
+            },
+            unit_amount: total,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: `${req.headers.get('origin')}/games/${gameId}?joined=true`,
+      cancel_url: `${req.headers.get('origin')}/games/${gameId}`,
+      metadata: {
+        gameId,
+        userId: user.id,
+        entryFee: entryFee.toString(),
+      },
+    })
+
+    return new Response(JSON.stringify({ url: session.url }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+})
+```
+
+**Step 2: Add Stripe secret to Supabase**
+
+Go to Supabase Dashboard > Settings > Edge Functions
+Add: STRIPE_SECRET_KEY
+
+**Step 3: Deploy function**
+
+Run:
+```bash
+pnpm supabase functions deploy create-checkout
+```
+
+**Step 4: Commit**
+
+```bash
+git add .
+git commit -m "feat: add stripe checkout edge function"
+```
+
+---
+
+### Task 3.3: Stripe Webhook Handler
+
+**Files:**
+- Create: `supabase/functions/stripe-webhook/index.ts`
+
+**Step 1: Create webhook handler**
+
+Create `supabase/functions/stripe-webhook/index.ts`:
+```ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import Stripe from 'https://esm.sh/stripe@13?target=deno'
+
+const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
+  apiVersion: '2023-10-16',
+})
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET')!
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+serve(async (req) => {
+  const signature = req.headers.get('stripe-signature')
+  if (!signature) {
+    return new Response('No signature', { status: 400 })
+  }
+
+  try {
+    const body = await req.text()
+    const event = stripe.webhooks.constructEvent(body, signature, WEBHOOK_SECRET)
+
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session
+        const { gameId, userId, entryFee } = session.metadata!
+
+        // Add player to game
+        await supabase.from('game_players').insert({
+          game_id: gameId,
+          user_id: userId,
+          stripe_payment_id: session.payment_intent as string,
+        })
+
+        // Update prize pool
+        await supabase.rpc('increment_prize_pool', {
+          game_id: gameId,
+          amount: parseFloat(entryFee),
+        })
+
+        break
+      }
+
+      case 'charge.refunded': {
+        const charge = event.data.object as Stripe.Charge
+        const paymentIntentId = charge.payment_intent as string
+
+        // Find and remove player
+        const { data: player } = await supabase
+          .from('game_players')
+          .select('game_id, user_id')
+          .eq('stripe_payment_id', paymentIntentId)
+          .single()
+
+        if (player) {
+          await supabase
+            .from('game_players')
+            .delete()
+            .eq('stripe_payment_id', paymentIntentId)
+
+          // Get entry fee and decrement pool
+          const { data: game } = await supabase
+            .from('games')
+            .select('entry_fee')
+            .eq('id', player.game_id)
+            .single()
+
+          if (game) {
+            await supabase.rpc('decrement_prize_pool', {
+              game_id: player.game_id,
+              amount: game.entry_fee,
+            })
+          }
+        }
+        break
+      }
+    }
+
+    return new Response(JSON.stringify({ received: true }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+})
+```
+
+**Step 2: Create RPC functions for prize pool**
+
+Run in Supabase SQL Editor:
+```sql
+create or replace function increment_prize_pool(game_id uuid, amount decimal)
+returns void as $$
+begin
+  update games
+  set prize_pool = prize_pool + amount
+  where id = game_id;
+end;
+$$ language plpgsql security definer;
+
+create or replace function decrement_prize_pool(game_id uuid, amount decimal)
+returns void as $$
+begin
+  update games
+  set prize_pool = greatest(prize_pool - amount, 0)
+  where id = game_id;
+end;
+$$ language plpgsql security definer;
+```
+
+**Step 3: Configure Stripe webhook**
+
+In Stripe Dashboard > Developers > Webhooks
+Add endpoint: `https://YOUR_PROJECT.supabase.co/functions/v1/stripe-webhook`
+Select events: `checkout.session.completed`, `charge.refunded`
+Copy webhook secret
+
+**Step 4: Add webhook secret to Supabase**
+
+Add: STRIPE_WEBHOOK_SECRET
+
+**Step 5: Deploy function**
+
+Run:
+```bash
+pnpm supabase functions deploy stripe-webhook
+```
+
+**Step 6: Commit**
+
+```bash
+git add .
+git commit -m "feat: add stripe webhook handler"
+```
+
+---
+
+### Task 3.4: Paid Game Join Flow
+
+**Files:**
+- Modify: `src/hooks/use-game.ts`
+- Modify: `src/routes/games/$gameId.tsx`
+
+**Step 1: Add checkout hook**
+
+Edit `src/hooks/use-game.ts`, add:
+```ts
+export function useCreateCheckout() {
+  const { session } = useAuth()
+
+  return useMutation({
+    mutationFn: async (gameId: string) => {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ gameId }),
+        }
+      )
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Checkout failed')
+      }
+
+      const data = await response.json()
+      return data.url
+    },
+  })
+}
+```
+
+**Step 2: Update join button**
+
+Edit `src/routes/games/$gameId.tsx`, update join logic:
+```tsx
+import { useGame, useJoinGame, useLeaveGame, useCreateCheckout } from '@/hooks/use-game'
+
+// Inside component:
+const createCheckout = useCreateCheckout()
+
+const handleJoin = async () => {
+  if (game.entry_fee > 0) {
+    // Paid game - redirect to Stripe
+    const url = await createCheckout.mutateAsync(gameId)
+    window.location.href = url
+  } else {
+    // Free game - join directly
+    await joinGame.mutateAsync(gameId)
+  }
+}
+
+// Update button:
+<Button
+  onClick={handleJoin}
+  disabled={joinGame.isPending || createCheckout.isPending}
+>
+  {game.entry_fee > 0
+    ? `Join (${game.currency} ${(game.entry_fee * 1.029 + 0.25).toFixed(2)})`
+    : 'Join Game'}
+</Button>
+```
+
+**Step 3: Commit**
+
+```bash
+git add .
+git commit -m "feat: integrate stripe checkout for paid games"
+```
+
+---
+
+### Task 3.5: Stripe Connect Setup
+
+**Files:**
+- Create: `supabase/migrations/007_payouts.sql`
+- Create: `supabase/functions/create-connect-account/index.ts`
+
+**Step 1: Create payouts table**
+
+Create `supabase/migrations/007_payouts.sql`:
+```sql
+create type payout_status as enum ('pending', 'processing', 'completed', 'failed');
+
+create table public.payouts (
+  id serial primary key,
+  game_id uuid references public.games(id) not null,
+  user_id uuid references public.profiles(id) not null,
+  amount decimal(10,2) not null,
+  currency game_currency not null,
+  status payout_status default 'pending',
+  stripe_transfer_id text,
+  created_at timestamptz default now()
+);
+
+-- Add stripe_connect_id to profiles
+alter table public.profiles add column stripe_connect_id text;
+
+-- RLS
+alter table public.payouts enable row level security;
+
+create policy "Users can view own payouts"
+  on public.payouts for select
+  using (auth.uid() = user_id);
+```
+
+**Step 2: Apply migration**
+
+Run in Supabase SQL Editor
+
+**Step 3: Create Connect account function**
+
+Create `supabase/functions/create-connect-account/index.ts`:
+```ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import Stripe from 'https://esm.sh/stripe@13?target=deno'
+
+const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
+  apiVersion: '2023-10-16',
+})
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+serve(async (req) => {
+  try {
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) throw new Error('No authorization header')
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) throw new Error('Unauthorized')
+
+    // Check if user already has Connect account
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('stripe_connect_id')
+      .eq('id', user.id)
+      .single()
+
+    let accountId = profile?.stripe_connect_id
+
+    if (!accountId) {
+      // Create Connect account
+      const account = await stripe.accounts.create({
+        type: 'express',
+        email: user.email,
+        metadata: { userId: user.id },
+      })
+
+      accountId = account.id
+
+      // Save to profile
+      await supabase
+        .from('profiles')
+        .update({ stripe_connect_id: accountId })
+        .eq('id', user.id)
+    }
+
+    // Create account link for onboarding
+    const accountLink = await stripe.accountLinks.create({
+      account: accountId,
+      refresh_url: `${req.headers.get('origin')}/profile?connect=refresh`,
+      return_url: `${req.headers.get('origin')}/profile?connect=complete`,
+      type: 'account_onboarding',
+    })
+
+    return new Response(JSON.stringify({ url: accountLink.url }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+})
+```
+
+**Step 4: Deploy function**
+
+Run:
+```bash
+pnpm supabase functions deploy create-connect-account
+```
+
+**Step 5: Commit**
+
+```bash
+git add .
+git commit -m "feat: add stripe connect account creation"
+```
+
+---
+
+### Task 3.6: Payout Processing
+
+**Files:**
+- Create: `supabase/functions/process-payout/index.ts`
+
+**Step 1: Create payout function**
+
+Create `supabase/functions/process-payout/index.ts`:
+```ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import Stripe from 'https://esm.sh/stripe@13?target=deno'
+
+const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
+  apiVersion: '2023-10-16',
+})
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+serve(async (req) => {
+  try {
+    const { gameId } = await req.json()
+
+    // Get game
+    const { data: game } = await supabase
+      .from('games')
+      .select('*')
+      .eq('id', gameId)
+      .single()
+
+    if (!game) throw new Error('Game not found')
+    if (game.status !== 'completed') throw new Error('Game not completed')
+    if (game.prize_pool <= 0) throw new Error('No prize pool')
+
+    // Get winners (alive players)
+    const { data: winners } = await supabase
+      .from('game_players')
+      .select('user_id, profiles(stripe_connect_id)')
+      .eq('game_id', gameId)
+      .eq('status', 'alive')
+
+    if (!winners?.length) throw new Error('No winners')
+
+    // Split prize pool
+    const prizePerWinner = game.prize_pool / winners.length
+    const amountInCents = Math.floor(prizePerWinner * 100)
+
+    for (const winner of winners) {
+      const connectId = (winner as any).profiles?.stripe_connect_id
+
+      if (!connectId) {
+        // Create pending payout record
+        await supabase.from('payouts').insert({
+          game_id: gameId,
+          user_id: winner.user_id,
+          amount: prizePerWinner,
+          currency: game.currency,
+          status: 'pending',
+        })
+        continue
+      }
+
+      try {
+        // Create transfer
+        const transfer = await stripe.transfers.create({
+          amount: amountInCents,
+          currency: game.currency.toLowerCase(),
+          destination: connectId,
+          metadata: { gameId, userId: winner.user_id },
+        })
+
+        // Record payout
+        await supabase.from('payouts').insert({
+          game_id: gameId,
+          user_id: winner.user_id,
+          amount: prizePerWinner,
+          currency: game.currency,
+          status: 'completed',
+          stripe_transfer_id: transfer.id,
+        })
+      } catch (err) {
+        await supabase.from('payouts').insert({
+          game_id: gameId,
+          user_id: winner.user_id,
+          amount: prizePerWinner,
+          currency: game.currency,
+          status: 'failed',
+        })
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+})
+```
+
+**Step 2: Deploy function**
+
+Run:
+```bash
+pnpm supabase functions deploy process-payout
+```
+
+**Step 3: Commit**
+
+```bash
+git add .
+git commit -m "feat: add payout processing edge function"
+```
+
+---
+
+### Task 3.7: Refund Handling
+
+**Files:**
+- Create: `supabase/functions/process-refund/index.ts`
+
+**Step 1: Create refund function**
+
+Create `supabase/functions/process-refund/index.ts`:
+```ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import Stripe from 'https://esm.sh/stripe@13?target=deno'
+
+const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
+  apiVersion: '2023-10-16',
+})
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+serve(async (req) => {
+  try {
+    const { gameId, userId, reason } = await req.json()
+
+    // Get player
+    const { data: player } = await supabase
+      .from('game_players')
+      .select('stripe_payment_id')
+      .eq('game_id', gameId)
+      .eq('user_id', userId)
+      .single()
+
+    if (!player?.stripe_payment_id) {
+      throw new Error('No payment found')
+    }
+
+    // Create refund
+    await stripe.refunds.create({
+      payment_intent: player.stripe_payment_id,
+      reason: 'requested_by_customer',
+      metadata: { gameId, userId, reason },
+    })
+
+    // Update player status (webhook will handle removal)
+    await supabase
+      .from('game_players')
+      .update({
+        status: 'kicked',
+        kick_reason: reason,
+      })
+      .eq('game_id', gameId)
+      .eq('user_id', userId)
+
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+})
+```
+
+**Step 2: Deploy function**
+
+Run:
+```bash
+pnpm supabase functions deploy process-refund
+```
+
+**Step 3: Commit**
+
+```bash
+git add .
+git commit -m "feat: add refund processing edge function"
+```
+
+---
+
+## Phase 3 Complete
+
+Phase 3 establishes payments:
+- Stripe Checkout for paid games
+- Webhook handling for payment events
+- Stripe Connect for payouts
+- Prize pool management
+- Refund processing
+
+Continue to Phase 4 for Polish.
+
+---
+
+## Phase 4: Polish
+
+### Task 4.1: Notifications Table
+
+**Files:**
+- Create: `supabase/migrations/008_notifications.sql`
+
+**Step 1: Create notifications table**
+
+Create `supabase/migrations/008_notifications.sql`:
+```sql
+create type notification_type as enum (
+  'round_reminder',
+  'pick_confirmed',
+  'pick_voided',
+  'round_results',
+  'game_won',
+  'eliminated',
+  'kicked',
+  'payout_sent',
+  'player_joined',
+  'game_starting',
+  'game_cancelled'
+);
+
+create table public.notifications (
+  id serial primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  type notification_type not null,
+  title text not null,
+  body text,
+  data jsonb,
+  read boolean default false,
+  created_at timestamptz default now()
+);
+
+create index notifications_user_idx on public.notifications(user_id, read);
+create index notifications_created_idx on public.notifications(created_at desc);
+
+alter table public.notifications enable row level security;
+
+create policy "Users can view own notifications"
+  on public.notifications for select
+  using (auth.uid() = user_id);
+
+create policy "Users can update own notifications"
+  on public.notifications for update
+  using (auth.uid() = user_id);
+```
+
+**Step 2: Apply migration**
+
+Run in Supabase SQL Editor
+
+**Step 3: Regenerate types**
+
+Run: `pnpm db:types`
+
+**Step 4: Commit**
+
+```bash
+git add .
+git commit -m "feat: add notifications table"
+```
+
+---
+
+### Task 4.2: Notification Hooks
+
+**Files:**
+- Create: `src/hooks/use-notifications.ts`
+
+**Step 1: Create notifications hook**
+
+Create `src/hooks/use-notifications.ts`:
+```ts
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from './use-auth'
+
+export function useNotifications() {
+  const { user } = useAuth()
+
+  return useQuery({
+    queryKey: ['notifications', user?.id],
+    queryFn: async () => {
+      if (!user) return []
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) throw error
+      return data
+    },
+    enabled: !!user,
+  })
+}
+
+export function useUnreadCount() {
+  const { user } = useAuth()
+
+  return useQuery({
+    queryKey: ['notifications-unread', user?.id],
+    queryFn: async () => {
+      if (!user) return 0
+
+      const { count, error } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('read', false)
+
+      if (error) throw error
+      return count || 0
+    },
+    enabled: !!user,
+  })
+}
+
+export function useMarkRead() {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (notificationId: number) => {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', notificationId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread'] })
+    },
+  })
+}
+
+export function useMarkAllRead() {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!user) return
+
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('user_id', user.id)
+        .eq('read', false)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread'] })
+    },
+  })
+}
+```
+
+**Step 2: Commit**
+
+```bash
+git add .
+git commit -m "feat: add notification hooks"
+```
+
+---
+
+### Task 4.3: Notification Center UI
+
+**Files:**
+- Create: `src/components/notification-center.tsx`
+- Modify: `src/components/layout/header.tsx`
+
+**Step 1: Install dropdown and popover**
+
+Run:
+```bash
+pnpm dlx shadcn@latest add dropdown-menu popover badge
+```
+
+**Step 2: Create notification center**
+
+Create `src/components/notification-center.tsx`:
+```tsx
+import { Bell } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Badge } from '@/components/ui/badge'
+import {
+  useNotifications,
+  useUnreadCount,
+  useMarkRead,
+  useMarkAllRead,
+} from '@/hooks/use-notifications'
+import { formatDistanceToNow } from 'date-fns'
+
+export function NotificationCenter() {
+  const { data: notifications } = useNotifications()
+  const { data: unreadCount } = useUnreadCount()
+  const markRead = useMarkRead()
+  const markAllRead = useMarkAllRead()
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="icon" className="relative">
+          <Bell className="h-5 w-5" />
+          {(unreadCount || 0) > 0 && (
+            <Badge
+              variant="destructive"
+              className="absolute -right-1 -top-1 h-5 w-5 rounded-full p-0 text-xs"
+            >
+              {unreadCount}
+            </Badge>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80" align="end">
+        <div className="flex items-center justify-between border-b pb-2">
+          <h4 className="font-semibold">Notifications</h4>
+          {(unreadCount || 0) > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => markAllRead.mutate()}
+            >
+              Mark all read
+            </Button>
+          )}
+        </div>
+        <div className="max-h-80 overflow-y-auto">
+          {notifications?.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No notifications
+            </p>
+          ) : (
+            notifications?.map((notification) => (
+              <div
+                key={notification.id}
+                className={`border-b p-3 last:border-0 ${
+                  !notification.read ? 'bg-accent/50' : ''
+                }`}
+                onClick={() => {
+                  if (!notification.read) {
+                    markRead.mutate(notification.id)
+                  }
+                }}
+              >
+                <p className="font-medium">{notification.title}</p>
+                {notification.body && (
+                  <p className="text-sm text-muted-foreground">
+                    {notification.body}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {formatDistanceToNow(new Date(notification.created_at), {
+                    addSuffix: true,
+                  })}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+```
+
+**Step 3: Install date-fns**
+
+Run:
+```bash
+pnpm add date-fns
+```
+
+**Step 4: Add to header**
+
+Edit `src/components/layout/header.tsx`:
+```tsx
+import { NotificationCenter } from '@/components/notification-center'
+
+// Inside nav, after user links:
+{user && <NotificationCenter />}
+```
+
+**Step 5: Commit**
+
+```bash
+git add .
+git commit -m "feat: add notification center UI"
+```
+
+---
+
+### Task 4.4: Email Notification Function
+
+**Files:**
+- Create: `supabase/functions/send-notification/index.ts`
+
+**Step 1: Create notification function**
+
+Create `supabase/functions/send-notification/index.ts`:
+```ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+serve(async (req) => {
+  try {
+    const { userId, type, title, body, data, sendEmail = true } = await req.json()
+
+    // Create in-app notification
+    await supabase.from('notifications').insert({
+      user_id: userId,
+      type,
+      title,
+      body,
+      data,
+    })
+
+    if (sendEmail) {
+      // Get user email
+      const { data: user } = await supabase.auth.admin.getUserById(userId)
+
+      if (user?.user?.email) {
+        // Send email via Resend
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${RESEND_API_KEY}`,
+          },
+          body: JSON.stringify({
+            from: 'Guess to Survive <noreply@guesstosurvive.com>',
+            to: user.user.email,
+            subject: title,
+            html: `
+              <h2>${title}</h2>
+              <p>${body || ''}</p>
+              <p><a href="https://guesstosurvive.com">Go to Guess to Survive</a></p>
+            `,
+          }),
+        })
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+})
+```
+
+**Step 2: Add Resend API key to Supabase**
+
+Add: RESEND_API_KEY
+
+**Step 3: Deploy function**
+
+Run:
+```bash
+pnpm supabase functions deploy send-notification
+```
+
+**Step 4: Commit**
+
+```bash
+git add .
+git commit -m "feat: add send-notification edge function with email"
+```
+
+---
+
+### Task 4.5: Profile Stats
+
+**Files:**
+- Create: `src/hooks/use-profile-stats.ts`
+- Modify: `src/routes/profile.tsx`
+
+**Step 1: Create profile stats hook**
+
+Create `src/hooks/use-profile-stats.ts`:
+```ts
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from './use-auth'
+
+export function useProfileStats() {
+  const { user } = useAuth()
+
+  return useQuery({
+    queryKey: ['profile-stats', user?.id],
+    queryFn: async () => {
+      if (!user) return null
+
+      // Games played
+      const { count: gamesPlayed } = await supabase
+        .from('game_players')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+
+      // Games won
+      const { data: wonGames } = await supabase
+        .from('game_players')
+        .select('game_id, games!inner(status)')
+        .eq('user_id', user.id)
+        .eq('status', 'alive')
+        .eq('games.status', 'completed')
+
+      const gamesWon = wonGames?.length || 0
+
+      // Total winnings
+      const { data: payouts } = await supabase
+        .from('payouts')
+        .select('amount')
+        .eq('user_id', user.id)
+        .eq('status', 'completed')
+
+      const totalWinnings = payouts?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0
+
+      // Longest streak (rounds survived)
+      const { data: picks } = await supabase
+        .from('picks')
+        .select('game_id, round, result')
+        .eq('user_id', user.id)
+        .eq('result', 'won')
+        .order('game_id')
+        .order('round')
+
+      let longestStreak = 0
+      let currentStreak = 0
+      let lastGameId: string | null = null
+      let lastRound = 0
+
+      for (const pick of picks || []) {
+        if (pick.game_id === lastGameId && pick.round === lastRound + 1) {
+          currentStreak++
+        } else {
+          currentStreak = 1
+        }
+        longestStreak = Math.max(longestStreak, currentStreak)
+        lastGameId = pick.game_id
+        lastRound = pick.round
+      }
+
+      // Active games
+      const { count: activeGames } = await supabase
+        .from('game_players')
+        .select('*, games!inner(status)', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('status', 'alive')
+        .in('games.status', ['pending', 'active'])
+
+      return {
+        gamesPlayed: gamesPlayed || 0,
+        gamesWon,
+        winRate: gamesPlayed ? ((gamesWon / gamesPlayed) * 100).toFixed(1) : '0',
+        totalWinnings,
+        longestStreak,
+        activeGames: activeGames || 0,
+      }
+    },
+    enabled: !!user,
+  })
+}
+```
+
+**Step 2: Update profile page**
+
+Edit `src/routes/profile.tsx`, add stats section:
+```tsx
+import { useProfileStats } from '@/hooks/use-profile-stats'
+
+// Inside ProfilePage component:
+const { data: stats } = useProfileStats()
+
+// Add after form:
+{stats && (
+  <Card className="mt-6">
+    <CardHeader>
+      <CardTitle>Stats</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <div>
+          <p className="text-2xl font-bold">{stats.gamesPlayed}</p>
+          <p className="text-sm text-muted-foreground">Games Played</p>
+        </div>
+        <div>
+          <p className="text-2xl font-bold">{stats.gamesWon}</p>
+          <p className="text-sm text-muted-foreground">Games Won</p>
+        </div>
+        <div>
+          <p className="text-2xl font-bold">{stats.winRate}%</p>
+          <p className="text-sm text-muted-foreground">Win Rate</p>
+        </div>
+        <div>
+          <p className="text-2xl font-bold">€{stats.totalWinnings.toFixed(2)}</p>
+          <p className="text-sm text-muted-foreground">Total Winnings</p>
+        </div>
+        <div>
+          <p className="text-2xl font-bold">{stats.longestStreak}</p>
+          <p className="text-sm text-muted-foreground">Longest Streak</p>
+        </div>
+        <div>
+          <p className="text-2xl font-bold">{stats.activeGames}</p>
+          <p className="text-sm text-muted-foreground">Active Games</p>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+)}
+```
+
+**Step 3: Commit**
+
+```bash
+git add .
+git commit -m "feat: add profile stats"
+```
+
+---
+
+### Task 4.6: Dark Mode
+
+**Files:**
+- Create: `src/components/theme-provider.tsx`
+- Create: `src/components/theme-toggle.tsx`
+- Modify: `src/main.tsx`
+- Modify: `src/components/layout/header.tsx`
+
+**Step 1: Create theme provider**
+
+Create `src/components/theme-provider.tsx`:
+```tsx
+import { createContext, useContext, useEffect, useState } from 'react'
+
+type Theme = 'dark' | 'light' | 'system'
+
+interface ThemeContextType {
+  theme: Theme
+  setTheme: (theme: Theme) => void
+}
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>(() => {
+    const stored = localStorage.getItem('theme') as Theme
+    return stored || 'system'
+  })
+
+  useEffect(() => {
+    const root = window.document.documentElement
+
+    root.classList.remove('light', 'dark')
+
+    if (theme === 'system') {
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
+        .matches
+        ? 'dark'
+        : 'light'
+      root.classList.add(systemTheme)
+    } else {
+      root.classList.add(theme)
+    }
+
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  )
+}
+
+export function useTheme() {
+  const context = useContext(ThemeContext)
+  if (!context) throw new Error('useTheme must be used within ThemeProvider')
+  return context
+}
+```
+
+**Step 2: Create theme toggle**
+
+Create `src/components/theme-toggle.tsx`:
+```tsx
+import { Moon, Sun } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { useTheme } from './theme-provider'
+
+export function ThemeToggle() {
+  const { setTheme } = useTheme()
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon">
+          <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+          <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+          <span className="sr-only">Toggle theme</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setTheme('light')}>
+          Light
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme('dark')}>
+          Dark
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme('system')}>
+          System
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+```
+
+**Step 3: Install lucide-react**
+
+Run:
+```bash
+pnpm add lucide-react
+```
+
+**Step 4: Add ThemeProvider to main.tsx**
+
+Edit `src/main.tsx`:
+```tsx
+import { ThemeProvider } from '@/components/theme-provider'
+
+// Wrap all providers:
+<ThemeProvider>
+  <AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      ...
+    </QueryClientProvider>
+  </AuthProvider>
+</ThemeProvider>
+```
+
+**Step 5: Add toggle to header**
+
+Edit `src/components/layout/header.tsx`:
+```tsx
+import { ThemeToggle } from '@/components/theme-toggle'
+
+// In nav, after notification center:
+<ThemeToggle />
+```
+
+**Step 6: Commit**
+
+```bash
+git add .
+git commit -m "feat: add dark mode with system preference"
+```
+
+---
+
+### Task 4.7: Toast Notifications
+
+**Files:**
+- Create: `src/components/toaster.tsx`
+- Modify: `src/main.tsx`
+
+**Step 1: Install sonner**
+
+Run:
+```bash
+pnpm add sonner
+```
+
+**Step 2: Create toaster component**
+
+Create `src/components/toaster.tsx`:
+```tsx
+import { Toaster as Sonner } from 'sonner'
+import { useTheme } from './theme-provider'
+
+export function Toaster() {
+  const { theme } = useTheme()
+
+  return (
+    <Sonner
+      theme={theme as 'light' | 'dark' | 'system'}
+      position="bottom-right"
+      richColors
+    />
+  )
+}
+```
+
+**Step 3: Add to main.tsx**
+
+Edit `src/main.tsx`:
+```tsx
+import { Toaster } from '@/components/toaster'
+
+// After RouterProvider:
+<Toaster />
+```
+
+**Step 4: Use in components**
+
+Example usage in any component:
+```tsx
+import { toast } from 'sonner'
+
+// Success
+toast.success('Game created!')
+
+// Error
+toast.error('Failed to join game')
+
+// Loading
+toast.loading('Processing payment...')
+```
+
+**Step 5: Commit**
+
+```bash
+git add .
+git commit -m "feat: add toast notifications with sonner"
+```
+
+---
+
+### Task 4.8: Social Sharing
+
+**Files:**
+- Create: `src/components/share-button.tsx`
+
+**Step 1: Create share button**
+
+Create `src/components/share-button.tsx`:
+```tsx
+import { Share2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { toast } from 'sonner'
+
+interface ShareButtonProps {
+  title: string
+  text: string
+  url: string
+}
+
+export function ShareButton({ title, text, url }: ShareButtonProps) {
+  const shareData = { title, text, url }
+
+  const handleNativeShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData)
+      } catch (err) {
+        // User cancelled
+      }
+    }
+  }
+
+  const handleCopyLink = async () => {
+    await navigator.clipboard.writeText(url)
+    toast.success('Link copied!')
+  }
+
+  const shareToTwitter = () => {
+    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
+    window.open(tweetUrl, '_blank')
+  }
+
+  const shareToWhatsApp = () => {
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`
+    window.open(waUrl, '_blank')
+  }
+
+  if (navigator.share) {
+    return (
+      <Button variant="outline" size="sm" onClick={handleNativeShare}>
+        <Share2 className="mr-2 h-4 w-4" />
+        Share
+      </Button>
+    )
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Share2 className="mr-2 h-4 w-4" />
+          Share
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuItem onClick={handleCopyLink}>
+          Copy link
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={shareToTwitter}>
+          Share on X
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={shareToWhatsApp}>
+          Share on WhatsApp
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+```
+
+**Step 2: Use in game detail**
+
+Edit `src/routes/games/$gameId.tsx`:
+```tsx
+import { ShareButton } from '@/components/share-button'
+
+// In header area:
+<ShareButton
+  title={`Join ${game.name} on Guess to Survive`}
+  text={`Join my survival game "${game.name}"!`}
+  url={`${window.location.origin}/games/${game.code}`}
+/>
+```
+
+**Step 3: Commit**
+
+```bash
+git add .
+git commit -m "feat: add social sharing component"
+```
+
+---
+
+### Task 4.9: Responsible Gaming - Self Exclusion
+
+**Files:**
+- Create: `src/routes/settings/responsible-gaming.tsx`
+
+**Step 1: Create responsible gaming page**
+
+Create `src/routes/settings/responsible-gaming.tsx`:
+```tsx
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { ProtectedRoute } from '@/components/protected-route'
+import { useProfile, useUpdateProfile } from '@/hooks/use-profile'
+import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
+import { addDays } from 'date-fns'
+
+export const Route = createFileRoute('/settings/responsible-gaming')({
+  component: () => (
+    <ProtectedRoute>
+      <ResponsibleGamingPage />
+    </ProtectedRoute>
+  ),
+})
+
+function ResponsibleGamingPage() {
+  const { data: profile } = useProfile()
+  const [excludeDays, setExcludeDays] = useState('7')
+  const [loading, setLoading] = useState(false)
+
+  const handleSelfExclude = async () => {
+    if (!confirm(`Are you sure you want to exclude yourself from paid games for ${excludeDays} days?`)) {
+      return
+    }
+
+    setLoading(true)
+    try {
+      const excludeUntil = addDays(new Date(), parseInt(excludeDays))
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ self_excluded_until: excludeUntil.toISOString() })
+        .eq('id', profile?.id)
+
+      if (error) throw error
+
+      toast.success(`Self-exclusion activated for ${excludeDays} days`)
+    } catch (err) {
+      toast.error('Failed to activate self-exclusion')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const isExcluded = profile?.self_excluded_until &&
+    new Date(profile.self_excluded_until) > new Date()
+
+  return (
+    <div className="mx-auto max-w-lg space-y-6">
+      <h1 className="text-2xl font-bold">Responsible Gaming</h1>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Self-Exclusion</CardTitle>
+          <CardDescription>
+            Take a break from paid games. During exclusion, you won't be able to
+            join any paid games.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isExcluded ? (
+            <p className="text-amber-600">
+              You are currently self-excluded until{' '}
+              {new Date(profile.self_excluded_until!).toLocaleDateString()}
+            </p>
+          ) : (
+            <>
+              <Select value={excludeDays} onValueChange={setExcludeDays}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7">7 days</SelectItem>
+                  <SelectItem value="30">30 days</SelectItem>
+                  <SelectItem value="90">90 days</SelectItem>
+                  <SelectItem value="365">1 year</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="destructive"
+                onClick={handleSelfExclude}
+                disabled={loading}
+              >
+                {loading ? 'Processing...' : 'Activate Self-Exclusion'}
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Spending History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            View your spending history in your profile.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+```
+
+**Step 2: Add link in header dropdown**
+
+Add to user menu or settings page navigation.
+
+**Step 3: Commit**
+
+```bash
+git add .
+git commit -m "feat: add self-exclusion for responsible gaming"
+```
+
+---
+
+### Task 4.10: Account Deletion
+
+**Files:**
+- Create: `supabase/functions/delete-account/index.ts`
+- Modify: `src/routes/settings/responsible-gaming.tsx`
+
+**Step 1: Create delete account function**
+
+Create `supabase/functions/delete-account/index.ts`:
+```ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+serve(async (req) => {
+  try {
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) throw new Error('No authorization header')
+
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) throw new Error('Unauthorized')
+
+    // Check for active games
+    const { data: activeGames } = await supabase
+      .from('game_players')
+      .select('game_id, games!inner(status)')
+      .eq('user_id', user.id)
+      .eq('status', 'alive')
+      .in('games.status', ['pending', 'active'])
+
+    if (activeGames?.length) {
+      throw new Error('Cannot delete account while in active games')
+    }
+
+    // Anonymize profile (soft delete)
+    await supabase
+      .from('profiles')
+      .update({
+        username: `deleted_${user.id.slice(0, 8)}`,
+        avatar_url: null,
+        email_verified: false,
+      })
+      .eq('id', user.id)
+
+    // Delete auth user
+    await supabase.auth.admin.deleteUser(user.id)
+
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+})
+```
+
+**Step 2: Deploy function**
+
+Run:
+```bash
+pnpm supabase functions deploy delete-account
+```
+
+**Step 3: Add delete UI**
+
+Add to responsible gaming page:
+```tsx
+const handleDeleteAccount = async () => {
+  if (!confirm('Are you sure? This action cannot be undone.')) return
+
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-account`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.error)
+    }
+
+    toast.success('Account deleted')
+    signOut()
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : 'Failed to delete account')
+  }
+}
+
+// Add card:
+<Card>
+  <CardHeader>
+    <CardTitle>Delete Account</CardTitle>
+    <CardDescription>
+      Permanently delete your account. This cannot be undone.
+    </CardDescription>
+  </CardHeader>
+  <CardContent>
+    <Button variant="destructive" onClick={handleDeleteAccount}>
+      Delete My Account
+    </Button>
+  </CardContent>
+</Card>
+```
+
+**Step 4: Commit**
+
+```bash
+git add .
+git commit -m "feat: add GDPR-compliant account deletion"
+```
+
+---
+
+## Phase 4 Complete
+
+Phase 4 adds polish:
+- In-app notifications with unread count
+- Email notifications via Resend
+- Profile stats
+- Dark mode with system preference
+- Toast notifications
+- Social sharing
+- Self-exclusion
+- Account deletion
+
+Continue to Phase 5 for Launch Prep.
+
+---
+
+## Phase 5: Launch Prep
+
+### Task 5.1: Landing Page
+
+**Files:**
+- Create: `src/routes/index.tsx` (replace existing)
+
+**Step 1: Create landing page**
+
+Replace `src/routes/index.tsx`:
+```tsx
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { useGames } from '@/hooks/use-games'
+import { useAuth } from '@/hooks/use-auth'
+
+export const Route = createFileRoute('/')({
+  component: LandingPage,
+})
+
+function LandingPage() {
+  const { user } = useAuth()
+  const { data: games } = useGames({ status: 'pending' })
+
+  const featuredGames = games?.slice(0, 3)
+
+  return (
+    <div className="space-y-16">
+      {/* Hero */}
+      <section className="py-20 text-center">
+        <h1 className="text-5xl font-bold tracking-tight">
+          Survive. Predict. Win.
+        </h1>
+        <p className="mt-4 text-xl text-muted-foreground">
+          Pick a Premier League team to win each week. Stay alive. Outlast everyone.
+        </p>
+        <div className="mt-8 flex justify-center gap-4">
+          {user ? (
+            <>
+              <Link to="/games/create">
+                <Button size="lg">Create Game</Button>
+              </Link>
+              <Link to="/games">
+                <Button size="lg" variant="outline">
+                  Browse Games
+                </Button>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link to="/auth/signup">
+                <Button size="lg">Start Playing</Button>
+              </Link>
+              <Link to="/how-it-works">
+                <Button size="lg" variant="outline">
+                  How It Works
+                </Button>
+              </Link>
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section>
+        <h2 className="mb-8 text-center text-3xl font-bold">How It Works</h2>
+        <div className="grid gap-6 md:grid-cols-4">
+          {[
+            {
+              step: '1',
+              title: 'Pick a Team',
+              desc: 'Choose one Premier League team to win this week',
+            },
+            {
+              step: '2',
+              title: 'Win = Advance',
+              desc: 'If your team wins, you survive to the next round',
+            },
+            {
+              step: '3',
+              title: 'Lose = Out',
+              desc: 'If your team loses or draws, you\'re eliminated',
+            },
+            {
+              step: '4',
+              title: 'Last One Wins',
+              desc: 'Be the last survivor to win the prize pool',
+            },
+          ].map((item) => (
+            <Card key={item.step}>
+              <CardContent className="pt-6 text-center">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-2xl font-bold text-primary-foreground">
+                  {item.step}
+                </div>
+                <h3 className="font-semibold">{item.title}</h3>
+                <p className="mt-2 text-sm text-muted-foreground">{item.desc}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      {/* The Catch */}
+      <section className="rounded-lg bg-accent p-8 text-center">
+        <h2 className="text-2xl font-bold">The Catch</h2>
+        <p className="mt-2 text-lg">
+          You can only use each team <strong>once</strong> per game.
+        </p>
+        <p className="text-muted-foreground">
+          Pick wisely. Save the big teams for when you really need them.
+        </p>
+      </section>
+
+      {/* Featured Games */}
+      {featuredGames && featuredGames.length > 0 && (
+        <section>
+          <h2 className="mb-6 text-2xl font-bold">Join a Game</h2>
+          <div className="grid gap-4 md:grid-cols-3">
+            {featuredGames.map((game) => (
+              <Link key={game.id} to="/games/$gameId" params={{ gameId: game.id }}>
+                <Card className="cursor-pointer hover:bg-accent">
+                  <CardContent className="pt-6">
+                    <h3 className="font-semibold">{game.name}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {game.entry_fee === 0
+                        ? 'Free'
+                        : `${game.currency} ${game.entry_fee}`}
+                    </p>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+          <div className="mt-4 text-center">
+            <Link to="/games">
+              <Button variant="outline">View All Games</Button>
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {/* CTA */}
+      {!user && (
+        <section className="py-12 text-center">
+          <h2 className="text-3xl font-bold">Ready to Survive?</h2>
+          <p className="mt-2 text-muted-foreground">
+            Create your account and start your first game in minutes.
+          </p>
+          <Link to="/auth/signup">
+            <Button size="lg" className="mt-6">
+              Get Started Free
+            </Button>
+          </Link>
+        </section>
+      )}
+    </div>
+  )
+}
+```
+
+**Step 2: Commit**
+
+```bash
+git add .
+git commit -m "feat: add landing page"
+```
+
+---
+
+### Task 5.2: How It Works Page
+
+**Files:**
+- Create: `src/routes/how-it-works.tsx`
+
+**Step 1: Create how it works page**
+
+Create `src/routes/how-it-works.tsx`:
+```tsx
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+
+export const Route = createFileRoute('/how-it-works')({
+  component: HowItWorksPage,
+})
+
+function HowItWorksPage() {
+  return (
+    <div className="mx-auto max-w-3xl space-y-12">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold">How It Works</h1>
+        <p className="mt-2 text-muted-foreground">
+          Everything you need to know about Guess to Survive
+        </p>
+      </div>
+
+      {/* Rules */}
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold">The Rules</h2>
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="font-semibold">1. Pick One Team Each Round</h3>
+              <p className="mt-1 text-muted-foreground">
+                Each week, select one Premier League team that you think will win
+                their match. You must pick before the first match of the round kicks off.
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="font-semibold">2. Win = Survive, Lose = Out</h3>
+              <p className="mt-1 text-muted-foreground">
+                If your team wins, you advance to the next round. If your team
+                loses or draws, you're eliminated from the game.
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="font-semibold">3. Use Each Team Once</h3>
+              <p className="mt-1 text-muted-foreground">
+                Here's the twist: you can only pick each team once per game.
+                Choose carefully - save the favorites for tough weeks!
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="font-semibold">4. Last One Standing Wins</h3>
+              <p className="mt-1 text-muted-foreground">
+                Keep surviving each round. The last player remaining wins the
+                entire prize pool. If multiple players survive to season end,
+                they split the prize.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* Game Types */}
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold">Game Types</h2>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Free Games</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground">
+                Practice games with no entry fee. Perfect for learning the ropes
+                or playing casually with friends.
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Paid Games</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground">
+                Entry fees from €1-€100. Winner takes the prize pool. Real money,
+                real stakes, real excitement.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold">FAQ</h2>
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="font-semibold">What if I forget to pick?</h3>
+              <p className="mt-1 text-muted-foreground">
+                You'll be automatically assigned the first available team
+                alphabetically that you haven't used yet.
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="font-semibold">What if my team's match is postponed?</h3>
+              <p className="mt-1 text-muted-foreground">
+                Your pick is voided and you'll need to select a different team
+                before the deadline.
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="font-semibold">Can I change my pick?</h3>
+              <p className="mt-1 text-muted-foreground">
+                Yes! You can change your pick as many times as you want before
+                the round locks (at first kickoff).
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="font-semibold">How do payouts work?</h3>
+              <p className="mt-1 text-muted-foreground">
+                Winners receive their prize via Stripe. You'll need to connect a
+                bank account or card to receive funds.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <div className="text-center">
+        <Link to="/auth/signup">
+          <Button size="lg">Start Playing Now</Button>
+        </Link>
+      </div>
+    </div>
+  )
+}
+```
+
+**Step 2: Commit**
+
+```bash
+git add .
+git commit -m "feat: add how it works page"
+```
+
+---
+
+### Task 5.3: Terms and Privacy Pages
+
+**Files:**
+- Create: `src/routes/terms.tsx`
+- Create: `src/routes/privacy.tsx`
+
+**Step 1: Create terms page**
+
+Create `src/routes/terms.tsx`:
+```tsx
+import { createFileRoute } from '@tanstack/react-router'
+
+export const Route = createFileRoute('/terms')({
+  component: TermsPage,
+})
+
+function TermsPage() {
+  return (
+    <div className="prose mx-auto max-w-3xl dark:prose-invert">
+      <h1>Terms of Service</h1>
+      <p className="lead">Last updated: {new Date().toLocaleDateString()}</p>
+
+      <h2>1. Acceptance of Terms</h2>
+      <p>
+        By accessing and using Guess to Survive, you accept and agree to be bound
+        by these Terms of Service.
+      </p>
+
+      <h2>2. Eligibility</h2>
+      <p>
+        You must be at least 18 years old to participate in paid games. By using
+        paid features, you confirm that you meet this age requirement.
+      </p>
+
+      <h2>3. Game Rules</h2>
+      <p>
+        Guess to Survive is a game of skill where your football knowledge
+        determines success. Results are based on real Premier League matches.
+      </p>
+
+      <h2>4. Payments and Refunds</h2>
+      <p>
+        Entry fees are processed through Stripe. Refunds are provided when games
+        are cancelled due to insufficient players or when you are removed by a
+        game manager.
+      </p>
+
+      <h2>5. Prize Payouts</h2>
+      <p>
+        Winners receive prizes via Stripe Connect. You must complete identity
+        verification as required by Stripe to receive payouts.
+      </p>
+
+      <h2>6. Responsible Gaming</h2>
+      <p>
+        Only play with money you can afford to lose. Self-exclusion options are
+        available in your account settings.
+      </p>
+
+      <h2>7. Prohibited Conduct</h2>
+      <p>
+        You may not create multiple accounts, use automated systems, or engage
+        in any form of fraud or manipulation.
+      </p>
+
+      <h2>8. Limitation of Liability</h2>
+      <p>
+        Guess to Survive is provided "as is" without warranties. We are not
+        liable for any losses resulting from your use of the platform.
+      </p>
+
+      <h2>9. Changes to Terms</h2>
+      <p>
+        We may modify these terms at any time. Continued use after changes
+        constitutes acceptance.
+      </p>
+    </div>
+  )
+}
+```
+
+**Step 2: Create privacy page**
+
+Create `src/routes/privacy.tsx`:
+```tsx
+import { createFileRoute } from '@tanstack/react-router'
+
+export const Route = createFileRoute('/privacy')({
+  component: PrivacyPage,
+})
+
+function PrivacyPage() {
+  return (
+    <div className="prose mx-auto max-w-3xl dark:prose-invert">
+      <h1>Privacy Policy</h1>
+      <p className="lead">Last updated: {new Date().toLocaleDateString()}</p>
+
+      <h2>1. Information We Collect</h2>
+      <p>We collect information you provide directly:</p>
+      <ul>
+        <li>Email address and password</li>
+        <li>Username and profile information</li>
+        <li>Payment information (processed by Stripe)</li>
+        <li>Game activity and picks</li>
+      </ul>
+
+      <h2>2. How We Use Your Information</h2>
+      <p>We use your information to:</p>
+      <ul>
+        <li>Provide and operate the game</li>
+        <li>Process payments and payouts</li>
+        <li>Send notifications about your games</li>
+        <li>Improve our services</li>
+      </ul>
+
+      <h2>3. Data Sharing</h2>
+      <p>
+        We share data with Stripe for payment processing. We do not sell your
+        personal information to third parties.
+      </p>
+
+      <h2>4. Data Retention</h2>
+      <p>
+        We retain your data while your account is active. Upon account deletion,
+        your personal data is anonymized but game records are preserved for
+        integrity.
+      </p>
+
+      <h2>5. Your Rights (GDPR)</h2>
+      <p>You have the right to:</p>
+      <ul>
+        <li>Access your personal data</li>
+        <li>Correct inaccurate data</li>
+        <li>Delete your account</li>
+        <li>Export your data</li>
+      </ul>
+
+      <h2>6. Cookies</h2>
+      <p>
+        We use essential cookies for authentication and preferences. We use
+        analytics to understand how you use our service.
+      </p>
+
+      <h2>7. Contact</h2>
+      <p>
+        For privacy inquiries, contact us at privacy@guesstosurvive.com
+      </p>
+    </div>
+  )
+}
+```
+
+**Step 3: Add prose plugin**
+
+Run:
+```bash
+pnpm add -D @tailwindcss/typography
+```
+
+Update `tailwind.config.ts`:
+```ts
+plugins: [require('@tailwindcss/typography')],
+```
+
+**Step 4: Commit**
+
+```bash
+git add .
+git commit -m "feat: add terms and privacy pages"
+```
+
+---
+
+### Task 5.4: Footer Component
+
+**Files:**
+- Create: `src/components/layout/footer.tsx`
+- Modify: `src/components/layout/layout.tsx`
+
+**Step 1: Create footer**
+
+Create `src/components/layout/footer.tsx`:
+```tsx
+import { Link } from '@tanstack/react-router'
+
+export function Footer() {
+  return (
+    <footer className="border-t py-8">
+      <div className="container mx-auto px-4">
+        <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
+          <p className="text-sm text-muted-foreground">
+            © {new Date().getFullYear()} Guess to Survive. All rights reserved.
+          </p>
+          <nav className="flex gap-4 text-sm">
+            <Link to="/how-it-works" className="text-muted-foreground hover:underline">
+              How It Works
+            </Link>
+            <Link to="/terms" className="text-muted-foreground hover:underline">
+              Terms
+            </Link>
+            <Link to="/privacy" className="text-muted-foreground hover:underline">
+              Privacy
+            </Link>
+          </nav>
+        </div>
+      </div>
+    </footer>
+  )
+}
+```
+
+**Step 2: Add to layout**
+
+Edit `src/components/layout/layout.tsx`:
+```tsx
+import { Footer } from './footer'
+
+export function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-screen flex-col bg-background">
+      <Header />
+      <main className="container mx-auto flex-1 px-4 py-8">{children}</main>
+      <Footer />
+    </div>
+  )
+}
+```
+
+**Step 3: Commit**
+
+```bash
+git add .
+git commit -m "feat: add footer component"
+```
+
+---
+
+### Task 5.5: Analytics Setup
+
+**Files:**
+- Create: `src/lib/analytics.ts`
+- Modify: `src/main.tsx`
+
+**Step 1: Install PostHog**
+
+Run:
+```bash
+pnpm add posthog-js
+```
+
+**Step 2: Create analytics module**
+
+Create `src/lib/analytics.ts`:
+```ts
+import posthog from 'posthog-js'
+
+const POSTHOG_KEY = import.meta.env.VITE_POSTHOG_KEY
+const POSTHOG_HOST = import.meta.env.VITE_POSTHOG_HOST || 'https://app.posthog.com'
+
+export function initAnalytics() {
+  if (!POSTHOG_KEY) return
+
+  posthog.init(POSTHOG_KEY, {
+    api_host: POSTHOG_HOST,
+    capture_pageview: false, // We'll do this manually with router
+    persistence: 'localStorage',
+  })
+}
+
+export function trackPageView(path: string) {
+  posthog.capture('$pageview', { $current_url: path })
+}
+
+export function trackEvent(event: string, properties?: Record<string, any>) {
+  posthog.capture(event, properties)
+}
+
+export function identifyUser(userId: string, traits?: Record<string, any>) {
+  posthog.identify(userId, traits)
+}
+
+export function resetUser() {
+  posthog.reset()
+}
+```
+
+**Step 3: Initialize in main.tsx**
+
+Edit `src/main.tsx`:
+```tsx
+import { initAnalytics, trackPageView } from '@/lib/analytics'
+
+// Before render:
+initAnalytics()
+
+// After creating router, add listener:
+router.subscribe(() => {
+  trackPageView(window.location.pathname)
+})
+```
+
+**Step 4: Update env example**
+
+Add to `.env.example`:
+```
+VITE_POSTHOG_KEY=phc_xxx
+VITE_POSTHOG_HOST=https://app.posthog.com
+```
+
+**Step 5: Commit**
+
+```bash
+git add .
+git commit -m "feat: add posthog analytics"
+```
+
+---
+
+### Task 5.6: OG Meta Tags
+
+**Files:**
+- Create: `src/components/seo.tsx`
+- Modify: `index.html`
+
+**Step 1: Update index.html with defaults**
+
+Edit `index.html`:
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Guess to Survive - Football Prediction Game</title>
+    <meta name="description" content="Pick a Premier League team to win each week. Stay alive. Outlast everyone. Win the prize." />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Guess to Survive" />
+    <meta property="og:description" content="Pick a Premier League team to win each week. Stay alive. Outlast everyone." />
+    <meta property="og:image" content="/og-image.png" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Guess to Survive" />
+    <meta name="twitter:description" content="Pick a Premier League team to win each week. Stay alive. Outlast everyone." />
+    <meta name="twitter:image" content="/og-image.png" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+```
+
+**Step 2: Create SEO component for dynamic pages**
+
+Create `src/components/seo.tsx`:
+```tsx
+import { useEffect } from 'react'
+
+interface SEOProps {
+  title?: string
+  description?: string
+}
+
+export function SEO({ title, description }: SEOProps) {
+  useEffect(() => {
+    if (title) {
+      document.title = `${title} | Guess to Survive`
+    }
+    if (description) {
+      const meta = document.querySelector('meta[name="description"]')
+      if (meta) meta.setAttribute('content', description)
+    }
+  }, [title, description])
+
+  return null
+}
+```
+
+**Step 3: Commit**
+
+```bash
+git add .
+git commit -m "feat: add OG meta tags and SEO component"
+```
+
+---
+
+### Task 5.7: Error Boundary
+
+**Files:**
+- Create: `src/components/error-boundary.tsx`
+- Modify: `src/routes/__root.tsx`
+
+**Step 1: Create error boundary**
+
+Create `src/components/error-boundary.tsx`:
+```tsx
+import { Component, type ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+
+interface Props {
+  children: ReactNode
+}
+
+interface State {
+  hasError: boolean
+  error?: Error
+}
+
+export class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex min-h-screen items-center justify-center p-4">
+          <Card className="max-w-md">
+            <CardHeader>
+              <CardTitle>Something went wrong</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-muted-foreground">
+                An unexpected error occurred. Please try refreshing the page.
+              </p>
+              <Button onClick={() => window.location.reload()}>
+                Refresh Page
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )
+    }
+
+    return this.props.children
+  }
+}
+```
+
+**Step 2: Wrap app in error boundary**
+
+Edit `src/main.tsx`:
+```tsx
+import { ErrorBoundary } from '@/components/error-boundary'
+
+// Wrap everything:
+<ErrorBoundary>
+  <ThemeProvider>
+    ...
+  </ThemeProvider>
+</ErrorBoundary>
+```
+
+**Step 3: Commit**
+
+```bash
+git add .
+git commit -m "feat: add error boundary"
+```
+
+---
+
+### Task 5.8: Loading States
+
+**Files:**
+- Create: `src/components/loading.tsx`
+
+**Step 1: Create loading component**
+
+Create `src/components/loading.tsx`:
+```tsx
+import { Loader2 } from 'lucide-react'
+
+export function LoadingSpinner({ className }: { className?: string }) {
+  return (
+    <Loader2 className={`h-6 w-6 animate-spin ${className || ''}`} />
+  )
+}
+
+export function LoadingPage() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center">
+      <LoadingSpinner className="h-8 w-8" />
+    </div>
+  )
+}
+
+export function LoadingCard() {
+  return (
+    <div className="flex h-32 items-center justify-center rounded-lg border">
+      <LoadingSpinner />
+    </div>
+  )
+}
+```
+
+**Step 2: Use throughout app**
+
+Replace loading states with component:
+```tsx
+import { LoadingPage } from '@/components/loading'
+
+if (isLoading) return <LoadingPage />
+```
+
+**Step 3: Commit**
+
+```bash
+git add .
+git commit -m "feat: add loading components"
+```
+
+---
+
+### Task 5.9: PWA Setup
+
+**Files:**
+- Create: `public/manifest.json`
+- Modify: `index.html`
+- Create: `public/sw.js`
+
+**Step 1: Create manifest**
+
+Create `public/manifest.json`:
+```json
+{
+  "name": "Guess to Survive",
+  "short_name": "Survive",
+  "description": "Football prediction survival game",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+```
+
+**Step 2: Create basic service worker**
+
+Create `public/sw.js`:
+```js
+const CACHE_NAME = 'gts-v1'
+
+self.addEventListener('install', (event) => {
+  self.skipWaiting()
+})
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(clients.claim())
+})
+
+self.addEventListener('fetch', (event) => {
+  // Network first strategy
+  event.respondWith(
+    fetch(event.request).catch(() => caches.match(event.request))
+  )
+})
+```
+
+**Step 3: Register in index.html**
+
+Add before closing body tag:
+```html
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+  }
+</script>
+```
+
+Add to head:
+```html
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#000000" />
+<link rel="apple-touch-icon" href="/icon-192.png" />
+```
+
+**Step 4: Commit**
+
+```bash
+git add .
+git commit -m "feat: add PWA manifest and service worker"
+```
+
+---
+
+### Task 5.10: Production Environment
+
+**Files:**
+- Create: `vercel.json`
+- Update: `.env.example`
+
+**Step 1: Create Vercel config**
+
+Create `vercel.json`:
+```json
+{
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-XSS-Protection", "value": "1; mode=block" }
+      ]
+    }
+  ]
+}
+```
+
+**Step 2: Final env example**
+
+Update `.env.example`:
+```
+# Supabase
+VITE_SUPABASE_URL=https://xxx.supabase.co
+VITE_SUPABASE_ANON_KEY=xxx
+
+# Stripe
+VITE_STRIPE_PUBLISHABLE_KEY=pk_live_xxx
+
+# Analytics
+VITE_POSTHOG_KEY=phc_xxx
+VITE_POSTHOG_HOST=https://app.posthog.com
+```
+
+**Step 3: Commit**
+
+```bash
+git add .
+git commit -m "chore: add vercel config and finalize env"
+```
+
+---
+
+## Phase 5 Complete
+
+Phase 5 completes launch prep:
+- Landing page
+- How it works page
+- Terms and privacy pages
+- Footer
+- Analytics (PostHog)
+- OG meta tags
+- Error boundary
+- Loading states
+- PWA setup
+- Production configuration
+
+---
+
+## Execution Handoff
+
+Plan complete and saved to `docs/plans/2026-02-02-guess-to-survive-implementation.md`.
+
+**Two execution options:**
+
+**1. Subagent-Driven (this session)**
+- I dispatch fresh subagent per task
+- Review between tasks
+- Fast iteration
+
+**2. Parallel Session (separate)**
+- Open new session in worktree
+- Batch execution with checkpoints
+
+**Which approach?**
