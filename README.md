@@ -1,5 +1,12 @@
 # React + TypeScript + Vite
 
+## Environment
+
+1. Copy `.env.example` to `.env.local`
+2. Fill in the values for your environment
+
+Vite exposes only variables prefixed with `VITE_` to the client.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
