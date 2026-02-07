@@ -9,10 +9,31 @@ import { Label } from '@/components/ui/label'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { useAuth } from '@/hooks/use-auth'
 import { useProfile, useUpdateProfile } from '@/hooks/use-profile'
+import { supabase } from '@/lib/supabase'
 
 export const Route = createFileRoute('/profile')({
   component: ProfileRoute,
 })
+
+const USERNAME_REGEX = /^[a-zA-Z0-9_]+$/
+const BANNED_USERNAME_PARTS = ['admin', 'support', 'mod', 'fuck', 'shit', 'bitch', 'sex']
+
+function getUsernameValidationError(username: string) {
+  if (username.length < 3 || username.length > 20) {
+    return 'Username must be between 3 and 20 characters.'
+  }
+
+  if (!USERNAME_REGEX.test(username)) {
+    return 'Username can contain only letters, numbers, and underscores.'
+  }
+
+  const normalized = username.toLowerCase()
+  if (BANNED_USERNAME_PARTS.some((word) => normalized.includes(word))) {
+    return 'Please choose a different username.'
+  }
+
+  return null
+}
 
 function ProfileRoute() {
   return (
@@ -31,10 +52,34 @@ function ProfileSettingsPage() {
     event.preventDefault()
 
     const formData = new FormData(event.currentTarget)
-    const usernameRaw = String(formData.get('username') ?? '').trim()
+    const usernameRaw = String(formData.get('username') ?? '').trim().toLowerCase()
     const avatarRaw = String(formData.get('avatar_url') ?? '').trim()
 
     try {
+      if (usernameRaw) {
+        const validationError = getUsernameValidationError(usernameRaw)
+        if (validationError) {
+          toast.error(validationError)
+          return
+        }
+
+        const { data: usernameMatches, error: usernameCheckError } = await supabase
+          .from('profiles')
+          .select('id')
+          .ilike('username', usernameRaw)
+          .neq('id', user?.id ?? '')
+          .limit(1)
+
+        if (usernameCheckError) {
+          throw usernameCheckError
+        }
+
+        if (usernameMatches && usernameMatches.length > 0) {
+          toast.error('Username is already taken.')
+          return
+        }
+      }
+
       await updateProfile.mutateAsync({
         avatar_url: avatarRaw || null,
         username: usernameRaw || null,
@@ -89,6 +134,9 @@ function ProfileSettingsPage() {
               placeholder="your_username"
               defaultValue={profile?.username ?? ''}
             />
+            <p className="text-xs text-muted-foreground">
+              3-20 characters, letters/numbers/underscores only.
+            </p>
           </div>
 
           <div className="space-y-2">
