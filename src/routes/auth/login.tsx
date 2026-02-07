@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { signIn } from '@/lib/auth'
+import { signIn, signInWithGoogle } from '@/lib/auth'
 
 export const Route = createFileRoute('/auth/login')({
   component: LoginPage,
@@ -17,6 +17,7 @@ function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -30,6 +31,19 @@ function LoginPage() {
       setError(signInError instanceof Error ? signInError.message : 'Login failed')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleGoogleSignIn = async () => {
+    setError(null)
+    setGoogleLoading(true)
+
+    try {
+      await signInWithGoogle()
+    } catch (signInError) {
+      setError(signInError instanceof Error ? signInError.message : 'Google sign in failed')
+    } finally {
+      setGoogleLoading(false)
     }
   }
 
@@ -68,6 +82,25 @@ function LoginPage() {
               {loading ? 'Logging in...' : 'Log in'}
             </Button>
           </form>
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-slate-700" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-slate-900 px-2 text-slate-400">Or continue with</span>
+              </div>
+            </div>
+            <Button
+              className="mt-4 w-full"
+              disabled={googleLoading}
+              onClick={handleGoogleSignIn}
+              type="button"
+              variant="outline"
+            >
+              {googleLoading ? 'Redirecting...' : 'Continue with Google'}
+            </Button>
+          </div>
           <p className="mt-4 text-center text-sm text-slate-300">
             Need an account?{' '}
             <Link className="underline" to="/auth/signup">
