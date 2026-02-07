@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -26,9 +27,12 @@ function LoginPage() {
 
     try {
       await signIn(email, password)
+      toast.success('Logged in successfully.')
       navigate({ to: '/' })
     } catch (signInError) {
-      setError(signInError instanceof Error ? signInError.message : 'Login failed')
+      const message = signInError instanceof Error ? signInError.message : 'Login failed'
+      setError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }
@@ -40,8 +44,11 @@ function LoginPage() {
 
     try {
       await signInWithGoogle()
+      toast.info('Redirecting to Google...')
     } catch (signInError) {
-      setError(signInError instanceof Error ? signInError.message : 'Google sign in failed')
+      const message = signInError instanceof Error ? signInError.message : 'Google sign in failed'
+      setError(message)
+      toast.error(message)
     } finally {
       setGoogleLoading(false)
     }

@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,9 +26,12 @@ function SignUpPage() {
 
     try {
       await signUp(email, password)
+      toast.success('Account created. Check your email for verification.')
       setSuccess(true)
     } catch (signupError) {
-      setError(signupError instanceof Error ? signupError.message : 'Sign up failed')
+      const message = signupError instanceof Error ? signupError.message : 'Sign up failed'
+      setError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }

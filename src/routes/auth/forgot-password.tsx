@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -24,9 +25,12 @@ function ForgotPasswordPage() {
 
     try {
       await requestPasswordReset(email)
+      toast.success('Password reset email sent.')
       setSuccess(true)
     } catch (resetError) {
-      setError(resetError instanceof Error ? resetError.message : 'Failed to send reset email')
+      const message = resetError instanceof Error ? resetError.message : 'Failed to send reset email'
+      setError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }
