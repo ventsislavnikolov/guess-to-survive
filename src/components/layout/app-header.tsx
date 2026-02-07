@@ -32,6 +32,13 @@ export function AppHeader() {
           </Link>
           {user ? (
             <>
+              <Link
+                activeProps={{ className: 'bg-accent text-accent-foreground' }}
+                className="rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
+                to="/games/create"
+              >
+                Create game
+              </Link>
               <span className="hidden text-xs text-muted-foreground sm:inline">{user.email}</span>
               <Button className="h-9" onClick={() => void signOut()} size="sm" variant="outline">
                 Sign out
@@ -79,6 +86,14 @@ export function AppHeader() {
             </Link>
             {user ? (
               <>
+                <Link
+                  activeProps={{ className: 'bg-accent text-accent-foreground' }}
+                  className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+                  onClick={closeMobile}
+                  to="/games/create"
+                >
+                  Create game
+                </Link>
                 <p className="px-3 py-1 text-xs text-muted-foreground">{user.email}</p>
                 <Button
                   className="justify-start"
