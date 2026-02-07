@@ -77,6 +77,11 @@ function LoginPage() {
                 value={password}
               />
             </div>
+            <p className="text-right text-sm">
+              <Link className="text-slate-300 underline" to="/auth/forgot-password">
+                Forgot password?
+              </Link>
+            </p>
             {error ? <p className="text-sm text-red-400">{error}</p> : null}
             <Button className="w-full" disabled={loading} type="submit">
               {loading ? 'Logging in...' : 'Log in'}
