@@ -3,9 +3,11 @@ const FOOTBALL_DATA_RATE_LIMIT_PER_MINUTE = 10
 const RATE_LIMIT_WINDOW_MS = 60_000
 const DEFAULT_RETRIES = 2
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504])
+const FOOTBALL_DATA_VAULT_SECRET_NAME = 'football_data_api_key'
 
 let windowStartedAt = Date.now()
 let requestCount = 0
+let cachedApiKey: string | null = null
 
 type DenoEnv = {
   get: (name: string) => string | undefined
@@ -31,6 +33,45 @@ function getEnv(name: string): string {
     throw new Error(`Missing required environment variable: ${name}`)
   }
 
+  return value
+}
+
+async function getFootballDataApiKey() {
+  if (cachedApiKey) {
+    return cachedApiKey
+  }
+
+  const deno = (globalThis as { Deno?: DenoGlobal }).Deno
+  const directEnvSecret = deno?.env.get('FOOTBALL_DATA_API_KEY')
+  if (directEnvSecret) {
+    cachedApiKey = directEnvSecret
+    return directEnvSecret
+  }
+
+  const supabaseUrl = getEnv('SUPABASE_URL')
+  const serviceRoleKey = getEnv('SUPABASE_SERVICE_ROLE_KEY')
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/get_runtime_secret`, {
+    body: JSON.stringify({ secret_name: FOOTBALL_DATA_VAULT_SECRET_NAME }),
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+  })
+
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(`Unable to resolve football-data API key from runtime secret: ${body}`)
+  }
+
+  const value = await response.json()
+  if (typeof value !== 'string' || !value) {
+    throw new Error('Runtime secret lookup returned an empty football-data API key')
+  }
+
+  cachedApiKey = value
   return value
 }
 
@@ -89,7 +130,7 @@ export async function footballDataRequest<T = unknown>(
   options: FootballDataRequestOptions = {},
 ): Promise<T> {
   const { method = 'GET', query, retries = DEFAULT_RETRIES } = options
-  const apiKey = getEnv('FOOTBALL_DATA_API_KEY')
+  const apiKey = await getFootballDataApiKey()
   const url = buildUrl(path, query)
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
