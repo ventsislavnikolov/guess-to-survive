@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import { ProtectedRoute } from '@/components/protected-route'
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { useAuth } from '@/hooks/use-auth'
-import { useProfile, useUpdateProfile } from '@/hooks/use-profile'
+import { useCreateConnectAccount, usePaymentHistory, useProfile, useUpdateProfile } from '@/hooks/use-profile'
 import { supabase } from '@/lib/supabase'
 
 export const Route = createFileRoute('/profile')({
@@ -43,6 +43,59 @@ function getUsernameValidationError(username: string) {
   return null
 }
 
+function formatCurrency(value: number | null, currency: string) {
+  if (value === null) {
+    return '-'
+  }
+
+  try {
+    return new Intl.NumberFormat('en-US', { currency, style: 'currency' }).format(value)
+  } catch {
+    return `${currency} ${value.toFixed(2)}`
+  }
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) {
+    return '-'
+  }
+
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(value))
+  } catch {
+    return value
+  }
+}
+
+function getPaymentStatusLabel(status: string) {
+  return status
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function getPaymentStatusClass(status: string) {
+  if (status === 'succeeded') {
+    return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+  }
+
+  if (status === 'refund_pending') {
+    return 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+  }
+
+  if (status === 'refunded') {
+    return 'border-sky-500/40 bg-sky-500/10 text-sky-300'
+  }
+
+  if (status === 'refund_failed' || status === 'failed') {
+    return 'border-destructive/40 bg-destructive/10 text-destructive'
+  }
+
+  return 'border-border bg-muted/20 text-muted-foreground'
+}
+
 function ProfileRoute() {
   return (
     <ProtectedRoute>
@@ -54,12 +107,38 @@ function ProfileRoute() {
 function ProfileSettingsPage() {
   const { signOut, user } = useAuth()
   const { data: profile, error, isLoading } = useProfile()
+  const createConnectAccount = useCreateConnectAccount()
+  const {
+    data: paymentHistory,
+    error: paymentHistoryError,
+    isLoading: isPaymentHistoryLoading,
+  } = usePaymentHistory()
   const updateProfile = useUpdateProfile()
   const [avatarValue, setAvatarValue] = useState<string | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [deleteConfirmationValue, setDeleteConfirmationValue] = useState('')
   const [deletePending, setDeletePending] = useState(false)
   const currentAvatar = avatarValue ?? profile?.avatar_url ?? ''
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const connect = params.get('connect')
+
+    if (!connect) {
+      return
+    }
+
+    if (connect === 'complete') {
+      toast.success('Stripe payout onboarding completed.')
+    } else if (connect === 'refresh') {
+      toast.info('Please continue Stripe onboarding to complete payout setup.')
+    }
+
+    params.delete('connect')
+    const query = params.toString()
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}`
+    window.history.replaceState({}, '', nextUrl)
+  }, [])
 
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -185,6 +264,22 @@ function ProfileSettingsPage() {
     }
   }
 
+  const handleConnectPayouts = async () => {
+    try {
+      const result = await createConnectAccount.mutateAsync()
+
+      if (!result.onboardingUrl) {
+        throw new Error('Stripe onboarding URL was not returned.')
+      }
+
+      window.location.assign(result.onboardingUrl)
+    } catch (connectError) {
+      const message =
+        connectError instanceof Error ? connectError.message : 'Unable to start payout onboarding.'
+      toast.error(message)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="grid min-h-[60vh] place-items-center">
@@ -277,6 +372,79 @@ function ProfileSettingsPage() {
               {updateProfile.isPending ? 'Saving...' : 'Save changes'}
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card className="border-destructive/40 bg-card text-card-foreground">
+        <CardHeader>
+          <CardTitle>Payout setup</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Connect Stripe payouts so you can receive prize money when you win paid games.
+          </p>
+          <Button disabled={createConnectAccount.isPending} onClick={handleConnectPayouts}>
+            {createConnectAccount.isPending ? 'Opening Stripe...' : 'Connect Stripe payouts'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border bg-card text-card-foreground">
+        <CardHeader>
+          <CardTitle>Payment history</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isPaymentHistoryLoading ? <LoadingSpinner label="Loading payment history..." /> : null}
+          {!isPaymentHistoryLoading && paymentHistoryError ? (
+            <p className="text-sm text-destructive">Could not load payment history.</p>
+          ) : null}
+          {!isPaymentHistoryLoading && !paymentHistoryError && (paymentHistory?.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted-foreground">No payments yet.</p>
+          ) : null}
+          {!isPaymentHistoryLoading && !paymentHistoryError
+            ? (paymentHistory ?? []).map((payment) => (
+                <div key={payment.id} className="space-y-2 rounded-lg border border-border/60 bg-card/70 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {payment.game_name ?? `Game ${payment.game_id.slice(0, 8)}`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{formatDateTime(payment.created_at)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold">
+                        {formatCurrency(payment.total_amount, payment.currency)}
+                      </p>
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${getPaymentStatusClass(payment.status)}`}
+                      >
+                        {getPaymentStatusLabel(payment.status)}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Entry: {formatCurrency(payment.entry_fee, payment.currency)} • Fee:{' '}
+                    {formatCurrency(payment.processing_fee, payment.currency)}
+                  </p>
+                  {payment.refund_requested_at ? (
+                    <p className="text-xs text-muted-foreground">
+                      Refund requested: {formatDateTime(payment.refund_requested_at)}
+                    </p>
+                  ) : null}
+                  {payment.refunded_at ? (
+                    <p className="text-xs text-muted-foreground">
+                      Refunded at: {formatDateTime(payment.refunded_at)}
+                      {payment.refunded_amount !== null
+                        ? ` (${formatCurrency(payment.refunded_amount, payment.currency)})`
+                        : ''}
+                    </p>
+                  ) : null}
+                  {payment.refund_failure_reason ? (
+                    <p className="text-xs text-destructive">Refund error: {payment.refund_failure_reason}</p>
+                  ) : null}
+                </div>
+              ))
+            : null}
         </CardContent>
       </Card>
 

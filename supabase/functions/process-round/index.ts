@@ -1,0 +1,399 @@
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
+
+import { createAdminClient } from '../_shared/supabase.ts'
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Origin': '*',
+  'Content-Type': 'application/json',
+}
+
+type ProcessRoundPayload = {
+  gameId?: string
+  round?: number
+}
+
+type RefundTriggerResult = {
+  error?: string
+  response?: unknown
+  triggered: boolean
+}
+
+type FixtureWithTeams = {
+  away_team: {
+    id: number
+    name: string
+  } | null
+  away_team_id: number
+  home_team: {
+    id: number
+    name: string
+  } | null
+  home_team_id: number
+  kickoff_time: string
+}
+
+async function triggerCancellationRefunds(gameId: string): Promise<RefundTriggerResult> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return {
+      error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY',
+      triggered: false,
+    }
+  }
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/process-refund`, {
+    body: JSON.stringify({
+      gameId,
+      reason: 'Game cancelled because minimum players were not met before kickoff.',
+      scenario: 'game_cancelled',
+    }),
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+  })
+
+  const payload = (await response.json().catch(() => null)) as unknown
+  if (!response.ok) {
+    return {
+      error: `process-refund failed with status ${response.status}`,
+      response: payload,
+      triggered: false,
+    }
+  }
+
+  return {
+    response: payload,
+    triggered: true,
+  }
+}
+
+function toPositiveInteger(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null
+  }
+
+  const integer = Math.floor(value)
+  if (integer < 1) {
+    return null
+  }
+
+  return integer
+}
+
+async function assertAdmin(request: Request) {
+  const authHeader = request.headers.get('Authorization')
+  if (!authHeader?.startsWith('Bearer ')) {
+    throw new Error('Missing or invalid Authorization header')
+  }
+
+  const token = authHeader.slice('Bearer '.length).trim()
+  if (!token) {
+    throw new Error('Missing bearer token')
+  }
+
+  const supabase = createAdminClient()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser(token)
+
+  if (authError || !user) {
+    throw new Error('Unauthorized')
+  }
+
+  const { data: userRow, error: roleError } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (roleError) {
+    throw roleError
+  }
+
+  if (!userRow || userRow.role !== 'admin') {
+    throw new Error('Admin access required')
+  }
+}
+
+serve(async (request) => {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { headers: CORS_HEADERS })
+  }
+
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      headers: CORS_HEADERS,
+      status: 405,
+    })
+  }
+
+  try {
+    await assertAdmin(request)
+
+    const payload = (await request.json().catch(() => ({}))) as ProcessRoundPayload
+    const gameId = typeof payload.gameId === 'string' && payload.gameId.length > 0 ? payload.gameId : null
+
+    if (!gameId) {
+      throw new Error('Missing required field: gameId')
+    }
+
+    const supabase = createAdminClient()
+
+    const { data: game, error: gameError } = await supabase
+      .from('games')
+      .select('current_round, id, manager_id, min_players, starting_round, status')
+      .eq('id', gameId)
+      .maybeSingle()
+
+    if (gameError) {
+      throw gameError
+    }
+
+    if (!game) {
+      return new Response(JSON.stringify({ error: 'Game not found' }), {
+        headers: CORS_HEADERS,
+        status: 404,
+      })
+    }
+
+    const payloadRound = toPositiveInteger(payload.round)
+    const targetRound = payloadRound ?? game.current_round ?? game.starting_round
+
+    if (!targetRound) {
+      throw new Error('Unable to determine target round')
+    }
+
+    const { data: fixtures, error: fixturesError } = await supabase
+      .from('fixtures')
+      .select(
+        `
+          away_team:teams!fixtures_away_team_id_fkey(id, name),
+          away_team_id,
+          home_team:teams!fixtures_home_team_id_fkey(id, name),
+          home_team_id,
+          kickoff_time
+        `,
+      )
+      .eq('round', targetRound)
+      .order('kickoff_time', { ascending: true })
+
+    if (fixturesError) {
+      throw fixturesError
+    }
+
+    const roundFixtures = (fixtures as FixtureWithTeams[] | null) ?? []
+    if (roundFixtures.length === 0) {
+      return new Response(
+        JSON.stringify({
+          assigned: 0,
+          eliminated: 0,
+          message: `No fixtures found for round ${targetRound}.`,
+          round: targetRound,
+          skipped: 0,
+        }),
+        { headers: CORS_HEADERS, status: 200 },
+      )
+    }
+
+    const earliestKickoff = roundFixtures[0]?.kickoff_time ? new Date(roundFixtures[0].kickoff_time).getTime() : null
+    if (earliestKickoff && earliestKickoff > Date.now()) {
+      return new Response(
+        JSON.stringify({
+          error: `Round ${targetRound} is not locked yet. Run after first kickoff.`,
+        }),
+        { headers: CORS_HEADERS, status: 409 },
+      )
+    }
+
+    const uniqueRoundTeams = new Map<number, { id: number; name: string }>()
+    for (const fixture of roundFixtures) {
+      const homeTeam = fixture.home_team
+      const awayTeam = fixture.away_team
+
+      if (homeTeam) {
+        uniqueRoundTeams.set(homeTeam.id, homeTeam)
+      }
+
+      if (awayTeam) {
+        uniqueRoundTeams.set(awayTeam.id, awayTeam)
+      }
+    }
+
+    const roundTeamsSorted = [...uniqueRoundTeams.values()].sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )
+
+    const { data: alivePlayers, error: alivePlayersError } = await supabase
+      .from('game_players')
+      .select('id, user_id')
+      .eq('game_id', gameId)
+      .eq('status', 'alive')
+
+    if (alivePlayersError) {
+      throw alivePlayersError
+    }
+
+    const aliveCount = alivePlayers?.length ?? 0
+    if (game.status === 'pending' && aliveCount < game.min_players) {
+      const { error: cancelGameError } = await supabase
+        .from('games')
+        .update({ status: 'cancelled' })
+        .eq('id', gameId)
+
+      if (cancelGameError) {
+        throw cancelGameError
+      }
+
+      const refundTrigger = await triggerCancellationRefunds(gameId)
+      if (!refundTrigger.triggered) {
+        const { error: managerNotificationError } = await supabase.from('notifications').insert({
+          body: `Game auto-cancelled due to minimum players not met, but refunds failed to trigger. Review process-refund logs.`,
+          data: {
+            error: refundTrigger.error,
+            game_id: gameId,
+            response: refundTrigger.response ?? null,
+            round: targetRound,
+          },
+          title: 'Refund trigger failed',
+          type: 'refund_trigger_failed',
+          user_id: game.manager_id,
+        })
+
+        if (managerNotificationError) {
+          throw managerNotificationError
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          assigned: 0,
+          eliminated: 0,
+          gameId,
+          minPlayersRequired: game.min_players,
+          playersAtLock: aliveCount,
+          refundTrigger,
+          round: targetRound,
+          skipped: 0,
+          status: 'cancelled',
+        }),
+        { headers: CORS_HEADERS, status: 200 },
+      )
+    }
+
+    let assigned = 0
+    let eliminated = 0
+    let skipped = 0
+
+    for (const player of alivePlayers ?? []) {
+      const { data: existingPick, error: existingPickError } = await supabase
+        .from('picks')
+        .select('id')
+        .eq('game_id', gameId)
+        .eq('user_id', player.user_id)
+        .eq('round', targetRound)
+        .maybeSingle()
+
+      if (existingPickError) {
+        throw existingPickError
+      }
+
+      if (existingPick) {
+        skipped += 1
+        continue
+      }
+
+      const { data: usedPicks, error: usedPicksError } = await supabase
+        .from('picks')
+        .select('team_id')
+        .eq('game_id', gameId)
+        .eq('user_id', player.user_id)
+
+      if (usedPicksError) {
+        throw usedPicksError
+      }
+
+      const usedTeamIds = new Set((usedPicks ?? []).map((pick) => pick.team_id))
+      const autoAssignedTeam = roundTeamsSorted.find((team) => !usedTeamIds.has(team.id))
+
+      if (!autoAssignedTeam) {
+        const { error: eliminateError } = await supabase
+          .from('game_players')
+          .update({
+            eliminated_round: targetRound,
+            kick_reason: 'no_available_team',
+            status: 'eliminated',
+          })
+          .eq('id', player.id)
+
+        if (eliminateError) {
+          throw eliminateError
+        }
+
+        eliminated += 1
+        continue
+      }
+
+      const { error: insertPickError } = await supabase.from('picks').insert({
+        auto_assigned: true,
+        game_id: gameId,
+        round: targetRound,
+        team_id: autoAssignedTeam.id,
+        user_id: player.user_id,
+      })
+
+      if (insertPickError) {
+        throw insertPickError
+      }
+
+      assigned += 1
+    }
+
+    const gameStatePatch: { current_round?: number; status?: string } = {}
+    if (game.current_round === null) {
+      gameStatePatch.current_round = targetRound
+    }
+
+    if (game.status === 'pending') {
+      gameStatePatch.status = 'active'
+    }
+
+    if (Object.keys(gameStatePatch).length > 0) {
+      const { error: gameUpdateError } = await supabase
+        .from('games')
+        .update(gameStatePatch)
+        .eq('id', gameId)
+
+      if (gameUpdateError) {
+        throw gameUpdateError
+      }
+    }
+
+    return new Response(
+      JSON.stringify({
+        assigned,
+        eliminated,
+        gameId,
+        round: targetRound,
+        skipped,
+        status: gameStatePatch.status ?? game.status,
+      }),
+      { headers: CORS_HEADERS },
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown process-round error'
+    const status = message === 'Admin access required' || message === 'Unauthorized' ? 403 : 500
+
+    return new Response(
+      JSON.stringify({
+        error: message,
+      }),
+      { headers: CORS_HEADERS, status },
+    )
+  }
+})

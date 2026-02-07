@@ -11,12 +11,15 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as GamesIndexRouteImport } from './routes/games/index'
 import { Route as GamesCreateRouteImport } from './routes/games/create'
+import { Route as GamesGameIdRouteImport } from './routes/games/$gameId'
 import { Route as AuthSignupRouteImport } from './routes/auth/signup'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth/reset-password'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-password'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
+import { Route as GamesGameIdPickRouteImport } from './routes/games/$gameId/pick'
 
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
@@ -28,9 +31,19 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GamesIndexRoute = GamesIndexRouteImport.update({
+  id: '/games/',
+  path: '/games/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GamesCreateRoute = GamesCreateRouteImport.update({
   id: '/games/create',
   path: '/games/create',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GamesGameIdRoute = GamesGameIdRouteImport.update({
+  id: '/games/$gameId',
+  path: '/games/$gameId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthSignupRoute = AuthSignupRouteImport.update({
@@ -58,6 +71,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GamesGameIdPickRoute = GamesGameIdPickRouteImport.update({
+  id: '/pick',
+  path: '/pick',
+  getParentRoute: () => GamesGameIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -67,7 +85,10 @@ export interface FileRoutesByFullPath {
   '/auth/login': typeof AuthLoginRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/auth/signup': typeof AuthSignupRoute
+  '/games/$gameId': typeof GamesGameIdRouteWithChildren
   '/games/create': typeof GamesCreateRoute
+  '/games/': typeof GamesIndexRoute
+  '/games/$gameId/pick': typeof GamesGameIdPickRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -77,7 +98,10 @@ export interface FileRoutesByTo {
   '/auth/login': typeof AuthLoginRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/auth/signup': typeof AuthSignupRoute
+  '/games/$gameId': typeof GamesGameIdRouteWithChildren
   '/games/create': typeof GamesCreateRoute
+  '/games': typeof GamesIndexRoute
+  '/games/$gameId/pick': typeof GamesGameIdPickRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -88,7 +112,10 @@ export interface FileRoutesById {
   '/auth/login': typeof AuthLoginRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/auth/signup': typeof AuthSignupRoute
+  '/games/$gameId': typeof GamesGameIdRouteWithChildren
   '/games/create': typeof GamesCreateRoute
+  '/games/': typeof GamesIndexRoute
+  '/games/$gameId/pick': typeof GamesGameIdPickRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -100,7 +127,10 @@ export interface FileRouteTypes {
     | '/auth/login'
     | '/auth/reset-password'
     | '/auth/signup'
+    | '/games/$gameId'
     | '/games/create'
+    | '/games/'
+    | '/games/$gameId/pick'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -110,7 +140,10 @@ export interface FileRouteTypes {
     | '/auth/login'
     | '/auth/reset-password'
     | '/auth/signup'
+    | '/games/$gameId'
     | '/games/create'
+    | '/games'
+    | '/games/$gameId/pick'
   id:
     | '__root__'
     | '/'
@@ -120,7 +153,10 @@ export interface FileRouteTypes {
     | '/auth/login'
     | '/auth/reset-password'
     | '/auth/signup'
+    | '/games/$gameId'
     | '/games/create'
+    | '/games/'
+    | '/games/$gameId/pick'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -131,7 +167,9 @@ export interface RootRouteChildren {
   AuthLoginRoute: typeof AuthLoginRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   AuthSignupRoute: typeof AuthSignupRoute
+  GamesGameIdRoute: typeof GamesGameIdRouteWithChildren
   GamesCreateRoute: typeof GamesCreateRoute
+  GamesIndexRoute: typeof GamesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -150,11 +188,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/games/': {
+      id: '/games/'
+      path: '/games'
+      fullPath: '/games/'
+      preLoaderRoute: typeof GamesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/games/create': {
       id: '/games/create'
       path: '/games/create'
       fullPath: '/games/create'
       preLoaderRoute: typeof GamesCreateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/games/$gameId': {
+      id: '/games/$gameId'
+      path: '/games/$gameId'
+      fullPath: '/games/$gameId'
+      preLoaderRoute: typeof GamesGameIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/signup': {
@@ -192,8 +244,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/games/$gameId/pick': {
+      id: '/games/$gameId/pick'
+      path: '/pick'
+      fullPath: '/games/$gameId/pick'
+      preLoaderRoute: typeof GamesGameIdPickRouteImport
+      parentRoute: typeof GamesGameIdRoute
+    }
   }
 }
+
+interface GamesGameIdRouteChildren {
+  GamesGameIdPickRoute: typeof GamesGameIdPickRoute
+}
+
+const GamesGameIdRouteChildren: GamesGameIdRouteChildren = {
+  GamesGameIdPickRoute: GamesGameIdPickRoute,
+}
+
+const GamesGameIdRouteWithChildren = GamesGameIdRoute._addFileChildren(
+  GamesGameIdRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -203,7 +274,9 @@ const rootRouteChildren: RootRouteChildren = {
   AuthLoginRoute: AuthLoginRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   AuthSignupRoute: AuthSignupRoute,
+  GamesGameIdRoute: GamesGameIdRouteWithChildren,
   GamesCreateRoute: GamesCreateRoute,
+  GamesIndexRoute: GamesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

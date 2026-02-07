@@ -10,6 +10,8 @@ type GameRow = Database['public']['Tables']['games']['Row']
 const GAME_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const GAME_CODE_LENGTH = 6
 const MAX_GAME_CODE_ATTEMPTS = 20
+const DEFAULT_PAGE_SIZE = 12
+const MAX_PAGE_SIZE = 50
 
 export type CreateGameInput = Pick<
   GameInsert,
@@ -26,7 +28,22 @@ export type CreateGameInput = Pick<
 >
 
 export type GameFilters = {
+  maxEntryFee?: number
+  minEntryFee?: number
+  paymentType?: 'all' | 'free' | 'paid'
+  sortBy?: 'most_players' | 'newest' | 'starting_soonest'
   status?: GameRow['status']
+  visibility?: GameRow['visibility']
+  page?: number
+  pageSize?: number
+}
+
+export type GamesResult = {
+  games: (GameRow & { player_count?: number })[]
+  page: number
+  pageCount: number
+  pageSize: number
+  total: number
 }
 
 function generateRandomGameCode() {
@@ -58,21 +75,72 @@ export async function generateUniqueGameCode() {
 }
 
 export function useGames(filters?: GameFilters) {
-  return useQuery({
-    queryKey: ['games', filters],
-    queryFn: async () => {
-      let query = supabase.from('games').select('*').order('created_at', { ascending: false })
+  const page = Math.max(1, Math.floor(filters?.page ?? 1))
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(filters?.pageSize ?? DEFAULT_PAGE_SIZE)))
+
+  return useQuery<GamesResult>({
+    queryKey: ['games', filters, page, pageSize],
+    queryFn: async (): Promise<GamesResult> => {
+      if (filters?.visibility === 'public') {
+        const { data, error } = await supabase.rpc('list_public_games', {
+          p_max_entry_fee: filters.maxEntryFee,
+          p_min_entry_fee: filters.minEntryFee,
+          p_page: page,
+          p_page_size: pageSize,
+          p_payment_type: filters.paymentType ?? 'all',
+          p_sort_by: filters.sortBy ?? 'newest',
+          p_status: filters.status,
+        })
+
+        if (error) {
+          throw error
+        }
+
+        const total = data?.at(0)?.total_count ?? 0
+        const pageCount = total > 0 ? Math.ceil(total / pageSize) : 1
+        const games = (data ?? []) as (GameRow & { player_count?: number })[]
+
+        return {
+          games,
+          page,
+          pageCount,
+          pageSize,
+          total,
+        } satisfies GamesResult
+      }
+
+      const from = (page - 1) * pageSize
+      const to = from + pageSize - 1
+
+      let query = supabase
+        .from('games')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(from, to)
 
       if (filters?.status) {
         query = query.eq('status', filters.status)
       }
 
-      const { data, error } = await query
+      if (filters?.visibility) {
+        query = query.eq('visibility', filters.visibility)
+      }
+
+      const { data, error, count } = await query
       if (error) {
         throw error
       }
 
-      return data
+      const total = count ?? 0
+      const pageCount = total > 0 ? Math.ceil(total / pageSize) : 1
+
+      return {
+        games: data ?? [],
+        page,
+        pageCount,
+        pageSize,
+        total,
+      } satisfies GamesResult
     },
   })
 }

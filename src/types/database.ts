@@ -268,6 +268,84 @@ export type Database = {
           },
         ]
       }
+      payments: {
+        Row: {
+          created_at: string
+          currency: string
+          entry_fee: number
+          game_id: string
+          id: number
+          processing_fee: number
+          refund_failure_reason: string | null
+          refund_reason: string | null
+          refund_requested_at: string | null
+          refunded_amount: number | null
+          refunded_at: string | null
+          status: string
+          stripe_checkout_session_id: string | null
+          stripe_payment_intent_id: string | null
+          stripe_refund_id: string | null
+          total_amount: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          currency: string
+          entry_fee: number
+          game_id: string
+          id?: number
+          processing_fee: number
+          refund_failure_reason?: string | null
+          refund_reason?: string | null
+          refund_requested_at?: string | null
+          refunded_amount?: number | null
+          refunded_at?: string | null
+          status?: string
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          stripe_refund_id?: string | null
+          total_amount: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          entry_fee?: number
+          game_id?: string
+          id?: number
+          processing_fee?: number
+          refund_failure_reason?: string | null
+          refund_reason?: string | null
+          refund_requested_at?: string | null
+          refunded_amount?: number | null
+          refunded_at?: string | null
+          status?: string
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          stripe_refund_id?: string | null
+          total_amount?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'payments_game_id_fkey'
+            columns: ['game_id']
+            isOneToOne: false
+            referencedRelation: 'games'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'payments_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       payouts: {
         Row: {
           amount: number
@@ -325,6 +403,7 @@ export type Database = {
           id: string
           role: string
           self_excluded_until: string | null
+          stripe_connect_id: string | null
           updated_at: string
           username: string | null
         }
@@ -336,6 +415,7 @@ export type Database = {
           id: string
           role?: string
           self_excluded_until?: string | null
+          stripe_connect_id?: string | null
           updated_at?: string
           username?: string | null
         }
@@ -347,6 +427,7 @@ export type Database = {
           id?: string
           role?: string
           self_excluded_until?: string | null
+          stripe_connect_id?: string | null
           updated_at?: string
           username?: string | null
         }
@@ -492,6 +573,65 @@ export type Database = {
       delete_my_account: {
         Args: Record<PropertyKey, never>
         Returns: undefined
+      }
+      get_public_game_detail: {
+        Args: {
+          p_game_id: string
+        }
+        Returns: {
+          code: string | null
+          created_at: string
+          currency: string
+          current_round: number | null
+          entry_fee: number | null
+          id: string
+          manager_id: string
+          max_players: number | null
+          min_players: number
+          name: string
+          pick_visibility: string
+          player_count: number
+          prize_pool: number | null
+          rebuy_deadline: string | null
+          starting_round: number
+          status: string
+          updated_at: string
+          visibility: string
+          wipeout_mode: string
+        }[]
+      }
+      list_public_games: {
+        Args: {
+          p_max_entry_fee?: number
+          p_min_entry_fee?: number
+          p_page?: number
+          p_page_size?: number
+          p_payment_type?: string
+          p_sort_by?: string
+          p_status?: string
+        }
+        Returns: {
+          code: string | null
+          created_at: string
+          currency: string
+          current_round: number | null
+          entry_fee: number | null
+          id: string
+          manager_id: string
+          max_players: number | null
+          min_players: number
+          name: string
+          pick_visibility: string
+          player_count: number
+          prize_pool: number | null
+          rebuy_deadline: string | null
+          starting_round: number
+          status: string
+          total_count: number
+          updated_at: string
+          visibility: string
+          wipeout_mode: string
+        }[]
       }
     }
     Enums: {
