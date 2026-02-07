@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { ProtectedRoute } from '@/components/protected-route'
@@ -17,6 +18,12 @@ export const Route = createFileRoute('/profile')({
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_]+$/
 const BANNED_USERNAME_PARTS = ['admin', 'support', 'mod', 'fuck', 'shit', 'bitch', 'sex']
+const AVATAR_PRESETS = [
+  'https://api.dicebear.com/8.x/thumbs/svg?seed=Falcon',
+  'https://api.dicebear.com/8.x/thumbs/svg?seed=Tiger',
+  'https://api.dicebear.com/8.x/thumbs/svg?seed=Wolf',
+  'https://api.dicebear.com/8.x/thumbs/svg?seed=Phoenix',
+]
 
 function getUsernameValidationError(username: string) {
   if (username.length < 3 || username.length > 20) {
@@ -47,6 +54,53 @@ function ProfileSettingsPage() {
   const { user } = useAuth()
   const { data: profile, error, isLoading } = useProfile()
   const updateProfile = useUpdateProfile()
+  const [avatarValue, setAvatarValue] = useState<string | null>(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const currentAvatar = avatarValue ?? profile?.avatar_url ?? ''
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !user) {
+      return
+    }
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file.')
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be 5MB or smaller.')
+      return
+    }
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-')
+    const path = `${user.id}/${Date.now()}-${safeName}`
+
+    setAvatarUploading(true)
+    try {
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, {
+        upsert: true,
+      })
+
+      if (uploadError) {
+        throw uploadError
+      }
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from('avatars').getPublicUrl(path)
+
+      setAvatarValue(publicUrl)
+      toast.success('Avatar uploaded.')
+    } catch (uploadError) {
+      const message = uploadError instanceof Error ? uploadError.message : 'Avatar upload failed.'
+      toast.error(message)
+    } finally {
+      setAvatarUploading(false)
+      event.target.value = ''
+    }
+  }
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -141,13 +195,41 @@ function ProfileSettingsPage() {
 
           <div className="space-y-2">
             <Label htmlFor="avatar_url">Avatar URL</Label>
+            {currentAvatar ? (
+              <img
+                alt="Avatar preview"
+                className="h-16 w-16 rounded-full border border-border object-cover"
+                src={currentAvatar}
+              />
+            ) : null}
             <Input
               id="avatar_url"
               name="avatar_url"
               placeholder="https://..."
               type="url"
-              defaultValue={profile?.avatar_url ?? ''}
+              value={currentAvatar}
+              onChange={(event) => setAvatarValue(event.target.value)}
             />
+            <Input
+              accept="image/png,image/jpeg,image/webp"
+              disabled={avatarUploading}
+              onChange={handleAvatarUpload}
+              type="file"
+            />
+            <div className="flex flex-wrap gap-2">
+              {AVATAR_PRESETS.map((presetUrl) => (
+                <Button
+                  key={presetUrl}
+                  className="h-9 w-9 overflow-hidden rounded-full p-0"
+                  onClick={() => setAvatarValue(presetUrl)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <img alt="Preset avatar" className="h-full w-full object-cover" src={presetUrl} />
+                </Button>
+              ))}
+            </div>
           </div>
 
           <Button disabled={updateProfile.isPending} type="submit">
