@@ -37,11 +37,7 @@ function AuthCallbackPage() {
           if (exchangeError) {
             throw exchangeError
           }
-        } else if (
-          tokenHash &&
-          type &&
-          SUPPORTED_OTP_TYPES.has(type as EmailOtpType)
-        ) {
+        } else if (tokenHash && type && SUPPORTED_OTP_TYPES.has(type as EmailOtpType)) {
           const { error: verifyError } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
             type: type as EmailOtpType,

@@ -28,7 +28,8 @@ function ForgotPasswordPage() {
       toast.success('Password reset email sent.')
       setSuccess(true)
     } catch (resetError) {
-      const message = resetError instanceof Error ? resetError.message : 'Failed to send reset email'
+      const message =
+        resetError instanceof Error ? resetError.message : 'Failed to send reset email'
       setError(message)
       toast.error(message)
     } finally {

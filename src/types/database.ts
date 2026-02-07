@@ -316,6 +316,42 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string | null
+          email_verified: boolean | null
+          id: string
+          role: string
+          self_excluded_until: string | null
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          email_verified?: boolean | null
+          id: string
+          role?: string
+          self_excluded_until?: string | null
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          email_verified?: boolean | null
+          id?: string
+          role?: string
+          self_excluded_until?: string | null
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
       picks: {
         Row: {
           auto_assigned: boolean

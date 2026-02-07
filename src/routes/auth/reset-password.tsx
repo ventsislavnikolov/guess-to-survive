@@ -124,7 +124,9 @@ function ResetPasswordPage() {
         </CardHeader>
         <CardContent>
           {success ? (
-            <p className="text-sm text-muted-foreground">Password updated. Redirecting to login...</p>
+            <p className="text-sm text-muted-foreground">
+              Password updated. Redirecting to login...
+            </p>
           ) : error ? (
             <div className="space-y-3">
               <p className="text-sm text-red-400">{error}</p>
