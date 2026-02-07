@@ -1,5 +1,6 @@
 import { Navigate } from '@tanstack/react-router'
 
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { useAuth } from '@/hooks/use-auth'
 
 type ProtectedRouteProps = {
@@ -12,7 +13,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   if (loading) {
     return (
       <main className="grid min-h-[60vh] place-items-center p-6">
-        <p className="text-sm text-muted-foreground">Checking session...</p>
+        <LoadingSpinner label="Checking session..." />
       </main>
     )
   }

@@ -3,6 +3,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { supabase } from '@/lib/supabase'
 
 export const Route = createFileRoute('/auth/callback')({
@@ -95,7 +96,7 @@ function AuthCallbackPage() {
     <main className="grid min-h-[70vh] place-items-center p-6">
       <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
         <CardContent className="space-y-2 pt-6 text-center">
-          <p className="text-sm text-muted-foreground">Finalizing authentication...</p>
+          <LoadingSpinner className="justify-center" label="Finalizing authentication..." />
         </CardContent>
       </Card>
     </main>

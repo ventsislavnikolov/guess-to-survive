@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { Label } from '@/components/ui/label'
 import { updatePassword } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
@@ -107,8 +108,8 @@ function ResetPasswordPage() {
     return (
       <main className="grid min-h-[70vh] place-items-center p-6">
         <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
-          <CardContent className="pt-6 text-center text-sm text-muted-foreground">
-            Verifying reset link...
+          <CardContent className="pt-6 text-center">
+            <LoadingSpinner className="justify-center" label="Verifying reset link..." />
           </CardContent>
         </Card>
       </main>
