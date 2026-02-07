@@ -275,7 +275,9 @@ export type Database = {
           entry_fee: number
           game_id: string
           id: number
+          payment_type: string
           processing_fee: number
+          rebuy_round: number
           refund_failure_reason: string | null
           refund_reason: string | null
           refund_requested_at: string | null
@@ -295,7 +297,9 @@ export type Database = {
           entry_fee: number
           game_id: string
           id?: number
+          payment_type?: string
           processing_fee: number
+          rebuy_round?: number
           refund_failure_reason?: string | null
           refund_reason?: string | null
           refund_requested_at?: string | null
@@ -315,7 +319,9 @@ export type Database = {
           entry_fee?: number
           game_id?: string
           id?: number
+          payment_type?: string
           processing_fee?: number
+          rebuy_round?: number
           refund_failure_reason?: string | null
           refund_reason?: string | null
           refund_requested_at?: string | null

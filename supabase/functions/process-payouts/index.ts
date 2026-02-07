@@ -133,7 +133,33 @@ serve(async (request) => {
       )
     }
 
-    const prizePool = game.prize_pool ?? 0
+    const { data: successfulPayments, error: successfulPaymentsError } = await supabase
+      .from('payments')
+      .select('entry_fee')
+      .eq('game_id', gameId)
+      .eq('status', 'succeeded')
+
+    if (successfulPaymentsError) {
+      throw successfulPaymentsError
+    }
+
+    const calculatedPrizePool = (successfulPayments ?? []).reduce((sum, payment) => {
+      const amount = typeof payment.entry_fee === 'number' ? payment.entry_fee : Number(payment.entry_fee ?? 0)
+      return sum + (Number.isFinite(amount) ? amount : 0)
+    }, 0)
+    const prizePool = Number(calculatedPrizePool.toFixed(2))
+
+    if ((game.prize_pool ?? 0) !== prizePool) {
+      const { error: gamePrizePoolUpdateError } = await supabase
+        .from('games')
+        .update({ prize_pool: prizePool })
+        .eq('id', gameId)
+
+      if (gamePrizePoolUpdateError) {
+        throw gamePrizePoolUpdateError
+      }
+    }
+
     const totalCents = Math.max(0, Math.round(prizePool * 100))
     if (totalCents <= 0) {
       return new Response(

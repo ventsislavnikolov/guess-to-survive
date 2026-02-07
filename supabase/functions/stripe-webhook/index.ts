@@ -7,6 +7,8 @@ const JSON_HEADERS = {
   'Content-Type': 'application/json',
 }
 
+type PaymentType = 'entry' | 'rebuy'
+
 function getRequiredEnv(name: string) {
   const value = Deno.env.get(name)
 
@@ -15,6 +17,28 @@ function getRequiredEnv(name: string) {
   }
 
   return value
+}
+
+function parsePaymentType(value: string | undefined): PaymentType {
+  return value === 'rebuy' ? 'rebuy' : 'entry'
+}
+
+function parseRebuyRound(value: string | undefined, paymentType: PaymentType) {
+  if (paymentType !== 'rebuy') {
+    return 0
+  }
+
+  if (!value) {
+    return 0
+  }
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return 0
+  }
+
+  const integer = Math.floor(parsed)
+  return integer > 0 ? integer : 0
 }
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId: string) {
@@ -32,6 +56,8 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId
     typeof session.payment_intent === 'string'
       ? session.payment_intent
       : session.payment_intent?.id ?? null
+  const paymentType = parsePaymentType(session.metadata?.payment_type)
+  const rebuyRound = parseRebuyRound(session.metadata?.rebuy_round, paymentType)
   const metadataCurrency = session.metadata?.currency?.toUpperCase() ?? 'EUR'
   const metadataEntryFee = Number(session.metadata?.entry_fee ?? '0')
   const metadataProcessingFee = Number(session.metadata?.processing_fee ?? '0')
@@ -43,7 +69,11 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId
   const supabase = createAdminClient()
   const { error: upsertError } = await supabase.from('game_players').upsert(
     {
+      eliminated_round: null,
       game_id: gameId,
+      is_rebuy: paymentType === 'rebuy',
+      kick_reason: null,
+      status: 'alive',
       stripe_payment_id: paymentIntentId,
       user_id: userId,
     },
@@ -61,7 +91,9 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId
       currency: metadataCurrency,
       entry_fee: entryFee,
       game_id: gameId,
+      payment_type: paymentType,
       processing_fee: processingFee,
+      rebuy_round: rebuyRound,
       status: 'succeeded',
       stripe_checkout_session_id: session.id,
       stripe_payment_intent_id: paymentIntentId,
@@ -69,7 +101,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId
       user_id: userId,
     },
     {
-      onConflict: 'game_id,user_id',
+      onConflict: 'game_id,user_id,payment_type,rebuy_round',
     },
   )
 
@@ -78,15 +110,20 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId
   }
 
   const { error: notificationError } = await supabase.from('notifications').insert({
-    body: 'Payment successful. Your spot in the game is confirmed.',
+    body:
+      paymentType === 'rebuy'
+        ? 'Rebuy payment successful. You are back in the game.'
+        : 'Payment successful. Your spot in the game is confirmed.',
     data: {
       event_id: eventId,
       game_id: gameId,
+      payment_type: paymentType,
+      rebuy_round: rebuyRound,
       stripe_payment_intent_id: paymentIntentId,
       stripe_session_id: session.id,
     },
-    title: 'Payment confirmed',
-    type: 'payment_confirmed',
+    title: paymentType === 'rebuy' ? 'Rebuy confirmed' : 'Payment confirmed',
+    type: paymentType === 'rebuy' ? 'rebuy_payment_confirmed' : 'payment_confirmed',
     user_id: userId,
   })
 
@@ -97,7 +134,9 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId
   return {
     gameId,
     ignored: false,
+    paymentType,
     paymentIntentId,
+    rebuyRound,
     userId,
   }
 }
@@ -126,7 +165,7 @@ async function handleChargeRefunded(charge: Stripe.Charge, eventId: string) {
   }, null)
   const refundedAmount = charge.amount_refunded ? charge.amount_refunded / 100 : null
 
-  const { error: paymentUpdateError } = await supabase
+  const { data: refundedPayments, error: paymentUpdateError } = await supabase
     .from('payments')
     .update({
       refund_failure_reason: null,
@@ -136,36 +175,28 @@ async function handleChargeRefunded(charge: Stripe.Charge, eventId: string) {
       stripe_refund_id: latestRefund?.id ?? null,
     })
     .eq('stripe_payment_intent_id', paymentIntentId)
+    .select('game_id, payment_type, rebuy_round, user_id')
 
   if (paymentUpdateError) {
     throw paymentUpdateError
   }
 
-  const { data: refundedPlayers, error: refundUpdateError } = await supabase
-    .from('game_players')
-    .update({
-      kick_reason: 'Payment refunded via Stripe.',
-      status: 'kicked',
-    })
-    .eq('stripe_payment_id', paymentIntentId)
-    .neq('status', 'kicked')
-    .select('game_id, user_id')
-
-  if (refundUpdateError) {
-    throw refundUpdateError
-  }
-
-  if ((refundedPlayers?.length ?? 0) > 0) {
-    const notifications = (refundedPlayers ?? []).map((player) => ({
-      body: 'Your entry payment was refunded. You have been removed from the game.',
+  if ((refundedPayments?.length ?? 0) > 0) {
+    const notifications = (refundedPayments ?? []).map((payment) => ({
+      body:
+        payment.payment_type === 'rebuy'
+          ? 'Your rebuy payment was refunded.'
+          : 'Your entry payment was refunded.',
       data: {
         event_id: eventId,
-        game_id: player.game_id,
+        game_id: payment.game_id,
+        payment_type: payment.payment_type,
+        rebuy_round: payment.rebuy_round,
         stripe_payment_intent_id: paymentIntentId,
       },
-      title: 'Payment refunded',
-      type: 'payment_refunded',
-      user_id: player.user_id,
+      title: payment.payment_type === 'rebuy' ? 'Rebuy payment refunded' : 'Payment refunded',
+      type: payment.payment_type === 'rebuy' ? 'rebuy_payment_refunded' : 'payment_refunded',
+      user_id: payment.user_id,
     }))
 
     const { error: notificationsError } = await supabase.from('notifications').insert(notifications)
@@ -179,7 +210,7 @@ async function handleChargeRefunded(charge: Stripe.Charge, eventId: string) {
     ignored: false,
     refundedAmount,
     paymentIntentId,
-    refundedPlayers: refundedPlayers?.length ?? 0,
+    refundedPayments: refundedPayments?.length ?? 0,
   }
 }
 
@@ -207,7 +238,7 @@ async function handleRefundFailed(refund: Stripe.Refund, eventId: string) {
       stripe_refund_id: refund.id,
     })
     .eq('stripe_payment_intent_id', paymentIntentId)
-    .select('game_id, user_id')
+    .select('game_id, payment_type, rebuy_round, user_id')
 
   if (paymentUpdateError) {
     throw paymentUpdateError
@@ -220,6 +251,8 @@ async function handleRefundFailed(refund: Stripe.Refund, eventId: string) {
         event_id: eventId,
         failure_reason: failureReason,
         game_id: payment.game_id,
+        payment_type: payment.payment_type,
+        rebuy_round: payment.rebuy_round,
         stripe_payment_intent_id: paymentIntentId,
         stripe_refund_id: refund.id,
       },

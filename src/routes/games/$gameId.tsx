@@ -8,11 +8,19 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { useAuth } from '@/hooks/use-auth'
-import { useCreateCheckout, useGame, useJoinGame, useKickPlayerWithRefund, useLeaveGame } from '@/hooks/use-game'
+import {
+  useCreateCheckout,
+  useCreateRebuyCheckout,
+  useGame,
+  useJoinGame,
+  useKickPlayerWithRefund,
+  useLeaveGame,
+} from '@/hooks/use-game'
 
 export const Route = createFileRoute('/games/$gameId')({
   validateSearch: (search: Record<string, unknown>) => ({
     ...(typeof search.checkout === 'string' ? { checkout: search.checkout } : {}),
+    ...(typeof search.rebuy === 'string' ? { rebuy: search.rebuy } : {}),
   }),
   component: GameDetailPage,
 })
@@ -33,20 +41,59 @@ function formatStatus(status: string) {
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
+function formatDateTime(value: string) {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(value))
+  } catch {
+    return value
+  }
+}
+
+function formatTimeRemaining(targetTimestamp: number | null, now: number) {
+  if (targetTimestamp === null || !Number.isFinite(targetTimestamp)) {
+    return 'Unavailable'
+  }
+
+  const diffMs = targetTimestamp - now
+  if (diffMs <= 0) {
+    return 'Closed'
+  }
+
+  const totalMinutes = Math.floor(diffMs / 60_000)
+  const days = Math.floor(totalMinutes / (24 * 60))
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
+  const minutes = totalMinutes % 60
+
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m`
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`
+  }
+
+  return `${minutes}m`
+}
+
 function GameDetailPage() {
   const { gameId } = Route.useParams()
   const navigate = Route.useNavigate()
-  const { checkout } = Route.useSearch()
+  const { checkout, rebuy } = Route.useSearch()
   const { user } = useAuth()
   const { data: game, error, isError, isLoading } = useGame(gameId)
   const createCheckout = useCreateCheckout()
+  const createRebuyCheckout = useCreateRebuyCheckout()
   const joinGame = useJoinGame()
   const kickPlayerWithRefund = useKickPlayerWithRefund()
   const leaveGame = useLeaveGame()
   const [kickTargetUserId, setKickTargetUserId] = useState<string | null>(null)
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
-    if (!checkout) {
+    if (!checkout && !rebuy) {
       return
     }
 
@@ -58,13 +105,29 @@ function GameDetailPage() {
       toast.error('Payment failed. Please retry checkout.')
     }
 
+    if (rebuy === 'success') {
+      toast.success('Rebuy payment succeeded. Your status is being restored.')
+    } else if (rebuy === 'cancelled') {
+      toast.info('Rebuy checkout was cancelled.')
+    } else if (rebuy === 'failed') {
+      toast.error('Rebuy payment failed. Please retry before the deadline.')
+    }
+
     navigate({
       params: { gameId },
       replace: true,
       search: () => ({}),
       to: '/games/$gameId',
     })
-  }, [checkout, gameId, navigate])
+  }, [checkout, gameId, navigate, rebuy])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNow(Date.now())
+    }, 60_000)
+
+    return () => window.clearInterval(interval)
+  }, [])
 
   if (isLoading) {
     return (
@@ -108,12 +171,24 @@ function GameDetailPage() {
 
   const isManager = user?.id === game.manager_id
   const isPlayer = user ? game.game_players.some((player) => player.user_id === user.id) : false
+  const currentUserPlayer = user ? game.game_players.find((player) => player.user_id === user.id) ?? null : null
   const isFreeGame = (game.entry_fee ?? 0) === 0
   const canJoin = Boolean(user) && !isPlayer && game.status === 'pending'
   const canJoinFree = canJoin && isFreeGame
   const canJoinPaid = canJoin && !isFreeGame
   const canLeave = Boolean(user) && isPlayer && !isManager && game.status === 'pending'
-  const isJoinActionPending = joinGame.isPending || leaveGame.isPending || createCheckout.isPending
+  const rebuyDeadlineTimestamp = game.rebuy_deadline ? new Date(game.rebuy_deadline).getTime() : null
+  const rebuyWindowOpen =
+    rebuyDeadlineTimestamp !== null && Number.isFinite(rebuyDeadlineTimestamp) && rebuyDeadlineTimestamp > now
+  const canRebuy =
+    Boolean(user) &&
+    currentUserPlayer?.status === 'eliminated' &&
+    game.status === 'active' &&
+    game.wipeout_mode === 'rebuy' &&
+    (game.entry_fee ?? 0) > 0 &&
+    rebuyWindowOpen
+  const isJoinActionPending =
+    joinGame.isPending || leaveGame.isPending || createCheckout.isPending || createRebuyCheckout.isPending
   const canManagePlayers = isManager && (game.entry_fee ?? 0) > 0 && (game.status === 'active' || game.status === 'pending')
   const managedPlayers = game.game_players.filter(
     (player) => player.status !== 'kicked' && player.user_id !== game.manager_id,
@@ -145,6 +220,28 @@ function GameDetailPage() {
       toast.success('You joined the game.')
     } catch (joinError) {
       toast.error(joinError instanceof Error ? joinError.message : 'Unable to join game.')
+    }
+  }
+
+  const handleRebuy = async () => {
+    if (!canRebuy) {
+      return
+    }
+
+    if (!window.confirm('Proceed to Stripe checkout to rebuy into this game?')) {
+      return
+    }
+
+    try {
+      const checkoutSession = await createRebuyCheckout.mutateAsync(gameId)
+
+      if (!checkoutSession.checkoutUrl) {
+        throw new Error('Stripe checkout URL was not returned.')
+      }
+
+      window.location.assign(checkoutSession.checkoutUrl)
+    } catch (rebuyError) {
+      toast.error(rebuyError instanceof Error ? rebuyError.message : 'Unable to start rebuy checkout.')
     }
   }
 
@@ -235,6 +332,11 @@ function GameDetailPage() {
               {leaveGame.isPending ? 'Leaving...' : 'Leave game'}
             </Button>
           ) : null}
+          {canRebuy ? (
+            <Button disabled={isJoinActionPending} onClick={handleRebuy}>
+              {createRebuyCheckout.isPending ? 'Redirecting...' : 'Rebuy now'}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -265,6 +367,10 @@ function GameDetailPage() {
             </p>
             <p>
               <span className="text-muted-foreground">Wipeout mode:</span> {formatStatus(game.wipeout_mode)}
+            </p>
+            <p>
+              <span className="text-muted-foreground">Rebuy deadline:</span>{' '}
+              {game.rebuy_deadline ? formatDateTime(game.rebuy_deadline) : '-'}
             </p>
           </CardContent>
         </Card>
@@ -297,6 +403,34 @@ function GameDetailPage() {
           isPending={createCheckout.isPending}
           onCheckout={handleJoin}
         />
+      ) : null}
+
+      {game.status === 'active' && game.wipeout_mode === 'rebuy' && game.rebuy_deadline ? (
+        <Card className="border-border bg-card/70">
+          <CardHeader>
+            <CardTitle>Rebuy window</CardTitle>
+            <CardDescription>
+              Rebuy closes at {formatDateTime(game.rebuy_deadline)} (
+              {formatTimeRemaining(rebuyDeadlineTimestamp, now)} remaining).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {currentUserPlayer?.status === 'eliminated' ? (
+              <p className="text-muted-foreground">
+                You are eliminated. Complete payment before the deadline to rejoin this game.
+              </p>
+            ) : currentUserPlayer?.status === 'alive' && currentUserPlayer.is_rebuy ? (
+              <p className="text-muted-foreground">Your rebuy is already confirmed.</p>
+            ) : (
+              <p className="text-muted-foreground">Only eliminated players can use rebuy.</p>
+            )}
+            {canRebuy ? (
+              <Button disabled={createRebuyCheckout.isPending} onClick={handleRebuy}>
+                {createRebuyCheckout.isPending ? 'Redirecting to checkout...' : 'Pay and rebuy'}
+              </Button>
+            ) : null}
+          </CardContent>
+        </Card>
       ) : null}
 
       {canManagePlayers ? (

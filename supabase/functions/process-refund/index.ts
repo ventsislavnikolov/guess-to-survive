@@ -13,6 +13,7 @@ type RefundScenario = 'game_cancelled' | 'kick_player' | 'single_rebuyer'
 
 type ProcessRefundPayload = {
   gameId?: string
+  rebuyRound?: number
   reason?: string
   scenario?: RefundScenario
   userId?: string
@@ -27,6 +28,8 @@ type PaymentRow = {
   currency: string
   game_id: string
   id: number
+  payment_type: string
+  rebuy_round: number
   status: string
   stripe_payment_intent_id: string | null
   total_amount: number
@@ -57,6 +60,19 @@ function parseScenario(value: string | undefined): RefundScenario {
   }
 
   return 'kick_player'
+}
+
+function toPositiveInteger(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null
+  }
+
+  const integer = Math.floor(value)
+  if (integer < 1) {
+    return null
+  }
+
+  return integer
 }
 
 async function assertAuthorized(request: Request, gameId: string): Promise<AuthorizedContext> {
@@ -156,6 +172,7 @@ async function resolveSingleRebuyerUserId(
 async function getTargetPayments(
   supabase: ReturnType<typeof createAdminClient>,
   gameId: string,
+  rebuyRound: number | null,
   scenario: RefundScenario,
   userId: string | undefined,
 ) {
@@ -167,9 +184,19 @@ async function getTargetPayments(
 
   let query = supabase
     .from('payments')
-    .select('currency, game_id, id, status, stripe_payment_intent_id, total_amount, user_id')
+    .select('currency, game_id, id, payment_type, rebuy_round, status, stripe_payment_intent_id, total_amount, user_id')
     .eq('game_id', gameId)
     .in('status', REFUNDABLE_STATUSES)
+
+  if (scenario === 'single_rebuyer') {
+    query = query.eq('payment_type', 'rebuy')
+
+    if (rebuyRound !== null) {
+      query = query.eq('rebuy_round', rebuyRound)
+    } else {
+      query = query.gt('rebuy_round', 0)
+    }
+  }
 
   if (targetUserId) {
     query = query.eq('user_id', targetUserId)
@@ -240,6 +267,7 @@ serve(async (request) => {
     }
 
     const scenario = parseScenario(payload.scenario)
+    const rebuyRound = toPositiveInteger(payload.rebuyRound)
     const reason =
       typeof payload.reason === 'string' && payload.reason.trim().length > 0
         ? payload.reason.trim()
@@ -297,7 +325,13 @@ serve(async (request) => {
       apiVersion: '2024-06-20',
     })
 
-    const { payments, targetUserId } = await getTargetPayments(supabase, gameId, scenario, requestedUserId)
+    const { payments, targetUserId } = await getTargetPayments(
+      supabase,
+      gameId,
+      rebuyRound,
+      scenario,
+      requestedUserId,
+    )
     if (payments.length === 0) {
       return new Response(
         JSON.stringify({
@@ -306,6 +340,7 @@ serve(async (request) => {
           gameId,
           message: 'No refundable payments found for the requested scenario.',
           processed: 0,
+          rebuyRound,
           scenario,
         }),
         {
@@ -346,11 +381,13 @@ serve(async (request) => {
           {
             metadata: {
               game_id: payment.game_id,
-              payment_id: String(payment.id),
-              reason: reason ?? '',
-              scenario,
-              user_id: payment.user_id,
-            },
+            payment_id: String(payment.id),
+            payment_type: payment.payment_type,
+            reason: reason ?? '',
+            rebuy_round: payment.rebuy_round,
+            scenario,
+            user_id: payment.user_id,
+          },
             payment_intent: paymentIntentId,
             reason: toStripeRefundReason(scenario),
           },
@@ -379,7 +416,9 @@ serve(async (request) => {
           data: {
             game_id: payment.game_id,
             payment_id: payment.id,
+            payment_type: payment.payment_type,
             refund_reason: reason ?? scenario,
+            rebuy_round: payment.rebuy_round,
             scenario,
             stripe_payment_intent_id: paymentIntentId,
             stripe_refund_id: refund.id,
@@ -430,6 +469,7 @@ serve(async (request) => {
         failures,
         gameId,
         processed,
+        rebuyRound,
         scenario,
         skipped,
         targetUserId: targetUserId ?? null,

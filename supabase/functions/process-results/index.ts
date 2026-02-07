@@ -30,6 +30,8 @@ type PayoutTriggerResult = {
   triggered: boolean
 }
 
+const REBUY_WINDOW_MS = 24 * 60 * 60 * 1000
+
 function toPositiveInteger(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return null
@@ -185,7 +187,7 @@ serve(async (request) => {
 
     const { data: game, error: gameError } = await supabase
       .from('games')
-      .select('current_round, id, manager_id, starting_round, wipeout_mode')
+      .select('current_round, entry_fee, id, manager_id, starting_round, wipeout_mode')
       .eq('id', gameId)
       .maybeSingle()
 
@@ -327,24 +329,35 @@ serve(async (request) => {
 
     const aliveCount = alivePlayers?.length ?? 0
     const wipeoutDetected = aliveCount === 0
+    const rebuyEnabled = game.wipeout_mode === 'rebuy' && (game.entry_fee ?? 0) > 0
+    const rebuyWindowOpened = wipeoutDetected && rebuyEnabled && !hasVoidedFixtures
+    const rebuyDeadline = rebuyWindowOpened ? new Date(Date.now() + REBUY_WINDOW_MS).toISOString() : null
     const nextStatus = hasVoidedFixtures
       ? 'active'
       : wipeoutDetected
-        ? game.wipeout_mode === 'rebuy'
+        ? rebuyEnabled
           ? 'active'
           : 'completed'
         : aliveCount <= 1
           ? 'completed'
           : 'active'
 
-    const gameStatePatch: { current_round?: number; status: 'active' | 'completed' } = {
+    const gameStatePatch: { current_round?: number; rebuy_deadline?: string | null; status: 'active' | 'completed' } =
+      {
       status: nextStatus,
     }
 
-    if (hasVoidedFixtures) {
+    if (rebuyWindowOpened) {
+      gameStatePatch.current_round = targetRound + 1
+      gameStatePatch.rebuy_deadline = rebuyDeadline
+    } else if (hasVoidedFixtures) {
       gameStatePatch.current_round = targetRound
     } else if (nextStatus === 'active') {
       gameStatePatch.current_round = targetRound + 1
+    }
+
+    if (!rebuyWindowOpened) {
+      gameStatePatch.rebuy_deadline = null
     }
 
     const { error: gameUpdateError } = await supabase.from('games').update(gameStatePatch).eq('id', gameId)
@@ -355,8 +368,10 @@ serve(async (request) => {
 
     if (wipeoutDetected) {
       const wipeoutMessage =
-        game.wipeout_mode === 'rebuy'
-          ? `Total wipeout detected in round ${targetRound}. Rebuy mode is enabled.`
+        rebuyWindowOpened
+          ? `Total wipeout detected in round ${targetRound}. Rebuy window is open for 24 hours.`
+          : game.wipeout_mode === 'rebuy'
+            ? `Total wipeout detected in round ${targetRound}. Rebuy is unavailable, game marked completed.`
           : `Total wipeout detected in round ${targetRound}. Game marked completed.`
 
       const { error: wipeoutNotificationError } = await supabase.from('notifications').insert({
@@ -374,6 +389,39 @@ serve(async (request) => {
 
       if (wipeoutNotificationError) {
         throw wipeoutNotificationError
+      }
+
+      if (rebuyWindowOpened && rebuyDeadline) {
+        const { data: eliminatedPlayers, error: eliminatedPlayersError } = await supabase
+          .from('game_players')
+          .select('user_id')
+          .eq('game_id', gameId)
+          .eq('status', 'eliminated')
+          .eq('eliminated_round', targetRound)
+
+        if (eliminatedPlayersError) {
+          throw eliminatedPlayersError
+        }
+
+        if ((eliminatedPlayers?.length ?? 0) > 0) {
+          const rebuyNotifications = eliminatedPlayers!.map((player) => ({
+            body: `Round ${targetRound} ended in a wipeout. Rebuy is open until ${rebuyDeadline}.`,
+            data: {
+              game_id: gameId,
+              rebuy_deadline: rebuyDeadline,
+              round: targetRound,
+            },
+            title: 'Rebuy window open',
+            type: 'rebuy_window_open',
+            user_id: player.user_id,
+          }))
+
+          const { error: rebuyNotificationError } = await supabase.from('notifications').insert(rebuyNotifications)
+
+          if (rebuyNotificationError) {
+            throw rebuyNotificationError
+          }
+        }
       }
     }
 
@@ -406,6 +454,7 @@ serve(async (request) => {
         nextStatus,
         picksUpdated,
         payoutTrigger,
+        rebuyDeadline,
         round: targetRound,
         voidedUsers: voidedUserIds.size,
         wipeoutDetected,

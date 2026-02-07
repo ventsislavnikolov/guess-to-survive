@@ -11,7 +11,9 @@ type CreateCheckoutResponse = {
   currency: string
   entryFee: number
   gameId: string
+  paymentType?: 'entry' | 'rebuy'
   processingFee: number
+  rebuyRound?: number
   sessionId: string
   total: number
 }
@@ -220,6 +222,35 @@ export function useCreateCheckout() {
 
       if (!response.ok) {
         throw new Error(payload?.error ?? 'Unable to create checkout session.')
+      }
+
+      return payload as CreateCheckoutResponse
+    },
+  })
+}
+
+export function useCreateRebuyCheckout() {
+  const { session, user } = useAuth()
+
+  return useMutation({
+    mutationFn: async (gameId: string): Promise<CreateCheckoutResponse> => {
+      if (!user || !session?.access_token) {
+        throw new Error('You must be signed in to rebuy.')
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-rebuy-checkout`, {
+        body: JSON.stringify({ gameId }),
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      })
+
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Unable to create rebuy checkout session.')
       }
 
       return payload as CreateCheckoutResponse
