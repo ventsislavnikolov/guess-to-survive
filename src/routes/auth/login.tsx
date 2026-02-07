@@ -48,8 +48,8 @@ function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-950 p-6 text-slate-100">
-      <Card className="w-full max-w-md border-slate-800 bg-slate-900/80 text-slate-100">
+    <main className="grid min-h-[70vh] place-items-center p-6">
+      <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
         <CardHeader>
           <CardTitle>Log in</CardTitle>
         </CardHeader>
@@ -78,7 +78,7 @@ function LoginPage() {
               />
             </div>
             <p className="text-right text-sm">
-              <Link className="text-slate-300 underline" to="/auth/forgot-password">
+              <Link className="text-muted-foreground underline" to="/auth/forgot-password">
                 Forgot password?
               </Link>
             </p>
@@ -90,10 +90,10 @@ function LoginPage() {
           <div className="mt-6">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-slate-700" />
+                <span className="w-full border-t border-border" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-slate-900 px-2 text-slate-400">Or continue with</span>
+                <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
               </div>
             </div>
             <Button
@@ -106,7 +106,7 @@ function LoginPage() {
               {googleLoading ? 'Redirecting...' : 'Continue with Google'}
             </Button>
           </div>
-          <p className="mt-4 text-center text-sm text-slate-300">
+          <p className="mt-4 text-center text-sm text-muted-foreground">
             Need an account?{' '}
             <Link className="underline" to="/auth/signup">
               Sign up

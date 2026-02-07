@@ -105,9 +105,9 @@ function ResetPasswordPage() {
 
   if (verifying) {
     return (
-      <main className="grid min-h-screen place-items-center bg-slate-950 p-6 text-slate-100">
-        <Card className="w-full max-w-md border-slate-800 bg-slate-900/80 text-slate-100">
-          <CardContent className="pt-6 text-center text-sm text-slate-300">
+      <main className="grid min-h-[70vh] place-items-center p-6">
+        <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
+          <CardContent className="pt-6 text-center text-sm text-muted-foreground">
             Verifying reset link...
           </CardContent>
         </Card>
@@ -116,14 +116,14 @@ function ResetPasswordPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-950 p-6 text-slate-100">
-      <Card className="w-full max-w-md border-slate-800 bg-slate-900/80 text-slate-100">
+    <main className="grid min-h-[70vh] place-items-center p-6">
+      <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
         <CardHeader>
           <CardTitle>Reset password</CardTitle>
         </CardHeader>
         <CardContent>
           {success ? (
-            <p className="text-sm text-slate-300">Password updated. Redirecting to login...</p>
+            <p className="text-sm text-muted-foreground">Password updated. Redirecting to login...</p>
           ) : error ? (
             <div className="space-y-3">
               <p className="text-sm text-red-400">{error}</p>

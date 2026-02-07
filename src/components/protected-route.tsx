@@ -11,8 +11,8 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   if (loading) {
     return (
-      <main className="grid min-h-screen place-items-center bg-slate-950 p-6 text-slate-100">
-        <p className="text-sm text-slate-300">Checking session...</p>
+      <main className="grid min-h-[60vh] place-items-center p-6">
+        <p className="text-sm text-muted-foreground">Checking session...</p>
       </main>
     )
   }

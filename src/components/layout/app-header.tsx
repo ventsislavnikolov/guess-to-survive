@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { Menu, X } from 'lucide-react'
 import { useState } from 'react'
 
+import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
 
@@ -12,26 +13,26 @@ export function AppHeader() {
   const closeMobile = () => setMobileOpen(false)
 
   return (
-    <header className="border-b border-slate-800/80 bg-slate-950/70 backdrop-blur">
+    <header className="border-b border-border/80 bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link className="group" onClick={closeMobile} to="/">
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-400 group-hover:text-slate-300">
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground group-hover:text-foreground/80">
             Guess to Survive
           </p>
-          <p className="text-sm font-semibold text-slate-100">Football Survival Game</p>
+          <p className="text-sm font-semibold text-foreground">Football Survival Game</p>
         </Link>
 
         <nav className="hidden items-center gap-2 text-sm md:flex">
           <Link
-            activeProps={{ className: 'text-slate-100' }}
-            className="rounded-md px-3 py-2 text-slate-300 transition hover:bg-slate-800/80 hover:text-slate-100"
+            activeProps={{ className: 'bg-accent text-accent-foreground' }}
+            className="rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
             to="/"
           >
             Home
           </Link>
           {user ? (
             <>
-              <span className="hidden text-xs text-slate-400 sm:inline">{user.email}</span>
+              <span className="hidden text-xs text-muted-foreground sm:inline">{user.email}</span>
               <Button className="h-9" onClick={() => void signOut()} size="sm" variant="outline">
                 Sign out
               </Button>
@@ -50,6 +51,7 @@ export function AppHeader() {
               </Link>
             </>
           )}
+          <ThemeToggle />
         </nav>
 
         <Button
@@ -65,11 +67,11 @@ export function AppHeader() {
       </div>
 
       {mobileOpen ? (
-        <div className="border-t border-slate-800/80 bg-slate-950 md:hidden">
+        <div className="border-t border-border/80 bg-background md:hidden">
           <nav className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-3 sm:px-6">
             <Link
-              activeProps={{ className: 'bg-slate-800 text-slate-100' }}
-              className="rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/80 hover:text-slate-100"
+              activeProps={{ className: 'bg-accent text-accent-foreground' }}
+              className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
               onClick={closeMobile}
               to="/"
             >
@@ -77,7 +79,7 @@ export function AppHeader() {
             </Link>
             {user ? (
               <>
-                <p className="px-3 py-1 text-xs text-slate-400">{user.email}</p>
+                <p className="px-3 py-1 text-xs text-muted-foreground">{user.email}</p>
                 <Button
                   className="justify-start"
                   onClick={() => {
@@ -101,6 +103,9 @@ export function AppHeader() {
                 </Link>
               </>
             )}
+            <div className="px-1 pt-2">
+              <ThemeToggle />
+            </div>
           </nav>
         </div>
       ) : null}

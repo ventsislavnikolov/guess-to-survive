@@ -35,11 +35,11 @@ function SignUpPage() {
 
   if (success) {
     return (
-      <main className="grid min-h-screen place-items-center bg-slate-950 p-6 text-slate-100">
-        <Card className="w-full max-w-md border-slate-800 bg-slate-900/80 text-slate-100">
+      <main className="grid min-h-[70vh] place-items-center p-6">
+        <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
           <CardContent className="space-y-4 pt-6 text-center">
             <p className="text-lg font-medium">Check your email to confirm your account.</p>
-            <Link className="text-sm text-slate-300 underline" to="/auth/login">
+            <Link className="text-sm text-muted-foreground underline" to="/auth/login">
               Continue to login
             </Link>
           </CardContent>
@@ -49,8 +49,8 @@ function SignUpPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-950 p-6 text-slate-100">
-      <Card className="w-full max-w-md border-slate-800 bg-slate-900/80 text-slate-100">
+    <main className="grid min-h-[70vh] place-items-center p-6">
+      <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
         <CardHeader>
           <CardTitle>Sign up</CardTitle>
         </CardHeader>
@@ -84,7 +84,7 @@ function SignUpPage() {
               {loading ? 'Signing up...' : 'Sign up'}
             </Button>
           </form>
-          <p className="mt-4 text-center text-sm text-slate-300">
+          <p className="mt-4 text-center text-sm text-muted-foreground">
             Already have an account?{' '}
             <Link className="underline" to="/auth/login">
               Log in

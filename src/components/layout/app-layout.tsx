@@ -7,14 +7,10 @@ type AppLayoutProps = {
 
 export function AppLayout({ children }: AppLayoutProps) {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-background text-foreground">
       <div
         aria-hidden
-        className="pointer-events-none fixed inset-0 opacity-40"
-        style={{
-          background:
-            'radial-gradient(circle at 10% 5%, rgba(56, 189, 248, 0.18), transparent 35%), radial-gradient(circle at 90% 0%, rgba(16, 185, 129, 0.15), transparent 30%)',
-        }}
+        className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_10%_5%,rgba(56,189,248,0.12),transparent_35%),radial-gradient(circle_at_90%_0%,rgba(16,185,129,0.12),transparent_30%)] opacity-70 dark:bg-[radial-gradient(circle_at_10%_5%,rgba(56,189,248,0.2),transparent_35%),radial-gradient(circle_at_90%_0%,rgba(16,185,129,0.16),transparent_30%)]"
       />
       <div className="relative flex min-h-screen flex-col">
         <AppHeader />

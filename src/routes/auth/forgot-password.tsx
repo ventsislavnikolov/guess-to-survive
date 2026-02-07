@@ -33,14 +33,14 @@ function ForgotPasswordPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-950 p-6 text-slate-100">
-      <Card className="w-full max-w-md border-slate-800 bg-slate-900/80 text-slate-100">
+    <main className="grid min-h-[70vh] place-items-center p-6">
+      <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
         <CardHeader>
           <CardTitle>Forgot password</CardTitle>
         </CardHeader>
         <CardContent>
           {success ? (
-            <div className="space-y-3 text-sm text-slate-300">
+            <div className="space-y-3 text-sm text-muted-foreground">
               <p>Check your email for a password reset link.</p>
               <Link className="underline" to="/auth/login">
                 Back to login
@@ -63,7 +63,7 @@ function ForgotPasswordPage() {
               <Button className="w-full" disabled={loading} type="submit">
                 {loading ? 'Sending...' : 'Send reset link'}
               </Button>
-              <p className="text-center text-sm text-slate-300">
+              <p className="text-center text-sm text-muted-foreground">
                 <Link className="underline" to="/auth/login">
                   Back to login
                 </Link>
