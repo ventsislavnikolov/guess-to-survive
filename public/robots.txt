@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+# Private / account routes
+Disallow: /auth/
+Disallow: /profile
+Disallow: /notifications
+Disallow: /spending-history
+
+Sitemap: https://guesstosurvive.com/sitemap.xml
