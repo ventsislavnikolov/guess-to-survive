@@ -40,89 +40,36 @@ export function useMyPicks(gameId: string) {
 }
 
 export function useMakePick() {
-  const { user } = useAuth()
+  const { session, user } = useAuth()
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: async ({ gameId, round, teamId }: MakePickInput) => {
-      if (!user) {
+      if (!user || !session?.access_token) {
         throw new Error('You must be signed in to make picks.')
       }
 
-      const { data: firstFixture, error: firstFixtureError } = await supabase
-        .from('fixtures')
-        .select('kickoff_time')
-        .eq('round', round)
-        .order('kickoff_time', { ascending: true })
-        .limit(1)
-        .maybeSingle()
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/submit-pick`, {
+        body: JSON.stringify({ gameId, round, teamId }),
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      })
 
-      if (firstFixtureError) {
-        throw firstFixtureError
+      const payload = (await response.json().catch(() => null)) as { action?: string; error?: string; pickId?: number } | null
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Unable to submit pick.')
       }
 
-      if (!firstFixture) {
-        throw new Error('Round fixtures are not available yet.')
-      }
-
-      if (new Date(firstFixture.kickoff_time).getTime() <= Date.now()) {
-        throw new Error('Round is locked. Picks can no longer be changed.')
-      }
-
-      const { data: existingPick, error: existingError } = await supabase
-        .from('picks')
-        .select('id, team_id')
-        .eq('game_id', gameId)
-        .eq('user_id', user.id)
-        .eq('round', round)
-        .maybeSingle()
-
-      if (existingError) {
-        throw existingError
-      }
-
-      if (existingPick) {
-        if (existingPick.team_id === teamId) {
-          return { action: 'noop' as const }
-        }
-
-        const { data: updatedPick, error: updateError } = await supabase
-          .from('picks')
-          .update({
-            auto_assigned: false,
-            team_id: teamId,
-          })
-          .eq('id', existingPick.id)
-          .select('id')
-          .single()
-
-        if (updateError) {
-          throw updateError
-        }
-
-        return { action: 'updated' as const, pickId: updatedPick.id }
-      }
-
-      const { data: createdPick, error: createError } = await supabase
-        .from('picks')
-        .insert({
-          game_id: gameId,
-          round,
-          team_id: teamId,
-          user_id: user.id,
-        })
-        .select('id')
-        .single()
-
-      if (createError) {
-        throw createError
-      }
-
-      return { action: 'created' as const, pickId: createdPick.id }
+      return payload as { action: 'created' | 'noop' | 'updated'; pickId?: number }
     },
     onSuccess: (_, { gameId }) => {
       queryClient.invalidateQueries({ queryKey: ['my-picks', gameId, user?.id] })
       queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
     },
   })
 }

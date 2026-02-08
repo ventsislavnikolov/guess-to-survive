@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 
 import { createAdminClient } from '../_shared/supabase.ts'
+import { sendEmailToUserId } from '../_shared/email.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -177,7 +178,8 @@ serve(async (request) => {
     await assertAdmin(request)
 
     const payload = (await request.json().catch(() => ({}))) as ProcessResultsPayload
-    const gameId = typeof payload.gameId === 'string' && payload.gameId.length > 0 ? payload.gameId : null
+    const gameId =
+      typeof payload.gameId === 'string' && payload.gameId.length > 0 ? payload.gameId : null
 
     if (!gameId) {
       throw new Error('Missing required field: gameId')
@@ -254,6 +256,7 @@ serve(async (request) => {
 
     let picksUpdated = 0
     let eliminated = 0
+    const eliminatedUserIds = new Set<string>()
     const voidedUserIds = new Set<string>()
 
     for (const pick of picks ?? []) {
@@ -274,6 +277,7 @@ serve(async (request) => {
       picksUpdated += 1
 
       if (outcome === 'lost' || outcome === 'draw') {
+        eliminatedUserIds.add(pick.user_id)
         const { data: eliminateRows, error: eliminateError } = await supabase
           .from('game_players')
           .update({
@@ -310,16 +314,65 @@ serve(async (request) => {
         user_id: userId,
       }))
 
-      const { error: notificationsError } = await supabase.from('notifications').insert(notifications)
+      const { error: notificationsError } = await supabase
+        .from('notifications')
+        .insert(notifications)
 
       if (notificationsError) {
         throw notificationsError
       }
+
+      await Promise.all(
+        [...voidedUserIds].map(async (userId) => {
+          try {
+            await sendEmailToUserId(supabase, userId, {
+              body: `One or more fixtures in round ${targetRound} were postponed. Submit a new pick before the updated lock deadline.`,
+              subject: 'Your pick was voided',
+              title: 'Repick required',
+            })
+          } catch (emailError) {
+            console.error('Failed to send pick voided email', emailError)
+          }
+        }),
+      )
+    }
+
+    if (eliminatedUserIds.size > 0) {
+      const { error: eliminationNotificationError } = await supabase.from('notifications').insert(
+        [...eliminatedUserIds].map((userId) => ({
+          body: `Your pick did not win in round ${targetRound}. You have been eliminated from the game.`,
+          data: {
+            game_id: gameId,
+            round: targetRound,
+          },
+          title: 'Eliminated',
+          type: 'eliminated',
+          user_id: userId,
+        })),
+      )
+
+      if (eliminationNotificationError) {
+        throw eliminationNotificationError
+      }
+
+      await Promise.all(
+        [...eliminatedUserIds].map(async (userId) => {
+          try {
+            await sendEmailToUserId(supabase, userId, {
+              body: `Your pick did not win in round ${targetRound}. You have been eliminated from the game.`,
+              subject: 'You were eliminated',
+              title: 'Eliminated',
+            })
+          } catch (emailError) {
+            console.error('Failed to send elimination email', emailError)
+          }
+        }),
+      )
     }
 
     const { data: alivePlayers, error: alivePlayersError } = await supabase
       .from('game_players')
-      .select('id')
+      .select('user_id')
       .eq('game_id', gameId)
       .eq('status', 'alive')
 
@@ -327,11 +380,14 @@ serve(async (request) => {
       throw alivePlayersError
     }
 
-    const aliveCount = alivePlayers?.length ?? 0
+    const aliveIds = [...new Set((alivePlayers ?? []).map((row) => row.user_id))]
+    const aliveCount = aliveIds.length
     const wipeoutDetected = aliveCount === 0
     const rebuyEnabled = game.wipeout_mode === 'rebuy' && (game.entry_fee ?? 0) > 0
     const rebuyWindowOpened = wipeoutDetected && rebuyEnabled && !hasVoidedFixtures
-    const rebuyDeadline = rebuyWindowOpened ? new Date(Date.now() + REBUY_WINDOW_MS).toISOString() : null
+    const rebuyDeadline = rebuyWindowOpened
+      ? new Date(Date.now() + REBUY_WINDOW_MS).toISOString()
+      : null
     const nextStatus = hasVoidedFixtures
       ? 'active'
       : wipeoutDetected
@@ -342,8 +398,11 @@ serve(async (request) => {
           ? 'completed'
           : 'active'
 
-    const gameStatePatch: { current_round?: number; rebuy_deadline?: string | null; status: 'active' | 'completed' } =
-      {
+    const gameStatePatch: {
+      current_round?: number
+      rebuy_deadline?: string | null
+      status: 'active' | 'completed'
+    } = {
       status: nextStatus,
     }
 
@@ -360,18 +419,62 @@ serve(async (request) => {
       gameStatePatch.rebuy_deadline = null
     }
 
-    const { error: gameUpdateError } = await supabase.from('games').update(gameStatePatch).eq('id', gameId)
+    const { error: gameUpdateError } = await supabase
+      .from('games')
+      .update(gameStatePatch)
+      .eq('id', gameId)
 
     if (gameUpdateError) {
       throw gameUpdateError
     }
 
+    // Round results email for survivors (avoid duplicate emails for voided picks and game winners).
+    if (nextStatus === 'active' && aliveIds.length > 0) {
+      const survivorIds = aliveIds.filter((userId) => !voidedUserIds.has(userId))
+
+      if (survivorIds.length > 0) {
+        const title = `Round ${targetRound} results`
+        const body = `You survived round ${targetRound}. Round ${targetRound + 1} is now open — submit your next pick before kickoff.`
+
+        const { error: survivorNotificationError } = await supabase.from('notifications').insert(
+          survivorIds.map((userId) => ({
+            body,
+            data: {
+              game_id: gameId,
+              round: targetRound,
+              status: 'survived',
+            },
+            title,
+            type: 'round_results',
+            user_id: userId,
+          })),
+        )
+
+        if (survivorNotificationError) {
+          throw survivorNotificationError
+        }
+
+        await Promise.all(
+          survivorIds.map(async (userId) => {
+            try {
+              await sendEmailToUserId(supabase, userId, {
+                body,
+                subject: title,
+                title,
+              })
+            } catch (emailError) {
+              console.error('Failed to send round results email', emailError)
+            }
+          }),
+        )
+      }
+    }
+
     if (wipeoutDetected) {
-      const wipeoutMessage =
-        rebuyWindowOpened
-          ? `Total wipeout detected in round ${targetRound}. Rebuy window is open for 24 hours.`
-          : game.wipeout_mode === 'rebuy'
-            ? `Total wipeout detected in round ${targetRound}. Rebuy is unavailable, game marked completed.`
+      const wipeoutMessage = rebuyWindowOpened
+        ? `Total wipeout detected in round ${targetRound}. Rebuy window is open for 24 hours.`
+        : game.wipeout_mode === 'rebuy'
+          ? `Total wipeout detected in round ${targetRound}. Rebuy is unavailable, game marked completed.`
           : `Total wipeout detected in round ${targetRound}. Game marked completed.`
 
       const { error: wipeoutNotificationError } = await supabase.from('notifications').insert({
@@ -416,7 +519,9 @@ serve(async (request) => {
             user_id: player.user_id,
           }))
 
-          const { error: rebuyNotificationError } = await supabase.from('notifications').insert(rebuyNotifications)
+          const { error: rebuyNotificationError } = await supabase
+            .from('notifications')
+            .insert(rebuyNotifications)
 
           if (rebuyNotificationError) {
             throw rebuyNotificationError
@@ -427,6 +532,46 @@ serve(async (request) => {
 
     let payoutTrigger: PayoutTriggerResult | null = null
     if (nextStatus === 'completed' && aliveCount > 0 && !hasVoidedFixtures) {
+      const { data: winners, error: winnersError } = await supabase
+        .from('game_players')
+        .select('user_id')
+        .eq('game_id', gameId)
+        .eq('status', 'alive')
+
+      if (winnersError) {
+        throw winnersError
+      }
+
+      const winnerIds = [...new Set((winners ?? []).map((row) => row.user_id))]
+      if (winnerIds.length > 0) {
+        await supabase.from('notifications').insert(
+          winnerIds.map((winnerId) => ({
+            body: `Congratulations! You survived round ${targetRound} and won the game.`,
+            data: {
+              game_id: gameId,
+              round: targetRound,
+            },
+            title: 'You won!',
+            type: 'game_won',
+            user_id: winnerId,
+          })),
+        )
+
+        await Promise.all(
+          winnerIds.map(async (winnerId) => {
+            try {
+              await sendEmailToUserId(supabase, winnerId, {
+                body: `Congratulations! You survived round ${targetRound} and won the game. We'll process payouts shortly (make sure your Stripe Connect details are set up in your profile).`,
+                subject: 'You won!',
+                title: 'You won!',
+              })
+            } catch (emailError) {
+              console.error('Failed to send win email', emailError)
+            }
+          }),
+        )
+      }
+
       payoutTrigger = await triggerPayoutProcessing(gameId)
 
       if (!payoutTrigger.triggered) {

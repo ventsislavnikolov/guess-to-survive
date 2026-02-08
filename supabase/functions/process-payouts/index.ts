@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import Stripe from 'https://esm.sh/stripe@14.25.0?target=deno'
 
 import { createAdminClient } from '../_shared/supabase.ts'
+import { sendEmailToUserId } from '../_shared/email.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -314,6 +315,16 @@ serve(async (request) => {
 
         if (notificationError) {
           throw notificationError
+        }
+
+        try {
+          await sendEmailToUserId(supabase, winnerId, {
+            body: `Your payout of ${game.currency} ${amount.toFixed(2)} has been initiated.`,
+            subject: 'Your payout is on the way',
+            title: 'Payout processed',
+          })
+        } catch (emailError) {
+          console.error('Failed to send payout email', emailError)
         }
 
         completed += 1

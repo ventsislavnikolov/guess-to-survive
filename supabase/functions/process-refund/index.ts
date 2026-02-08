@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import Stripe from 'https://esm.sh/stripe@14.25.0?target=deno'
 
 import { createAdminClient } from '../_shared/supabase.ts'
+import { sendEmailToUserId } from '../_shared/email.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -460,6 +461,26 @@ serve(async (request) => {
       if (notificationError) {
         throw notificationError
       }
+
+      const uniqueUserIds = [...new Set(notificationRows.map((row) => row.user_id))]
+      await Promise.all(
+        uniqueUserIds.map(async (userId) => {
+          const sample = notificationRows.find((row) => row.user_id === userId)
+          if (!sample) {
+            return
+          }
+
+          try {
+            await sendEmailToUserId(supabase, userId, {
+              body: sample.body,
+              subject: sample.title,
+              title: sample.title,
+            })
+          } catch (emailError) {
+            console.error('Failed to send refund email', emailError)
+          }
+        }),
+      )
     }
 
     return new Response(

@@ -580,6 +580,16 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      get_my_profile_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          games_played: number
+          games_won: number
+          longest_streak: number
+          total_winnings: number
+          win_rate: number
+        }[]
+      }
       get_public_game_detail: {
         Args: {
           p_game_id: string

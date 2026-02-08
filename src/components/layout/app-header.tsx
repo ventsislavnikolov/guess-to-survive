@@ -1,13 +1,15 @@
 import { Link } from '@tanstack/react-router'
-import { Menu, X } from 'lucide-react'
+import { Bell, Menu, X } from 'lucide-react'
 import { useState } from 'react'
 
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
+import { useUnreadNotificationCount } from '@/hooks/use-notifications'
 
 export function AppHeader() {
   const { signOut, user } = useAuth()
+  const unreadCount = useUnreadNotificationCount()
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const closeMobile = () => setMobileOpen(false)
@@ -45,6 +47,21 @@ export function AppHeader() {
                 to="/games/create"
               >
                 Create game
+              </Link>
+              <Link
+                activeProps={{ className: 'bg-accent text-accent-foreground' }}
+                className="relative rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
+                to="/notifications"
+              >
+                <span className="flex items-center gap-2">
+                  <Bell className="h-4 w-4" />
+                  Notifications
+                </span>
+                {unreadCount > 0 ? (
+                  <span className="absolute right-1 top-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                ) : null}
               </Link>
               <span className="hidden text-xs text-muted-foreground sm:inline">{user.email}</span>
               <Button className="h-9" onClick={() => void signOut()} size="sm" variant="outline">
@@ -108,6 +125,22 @@ export function AppHeader() {
                   to="/games/create"
                 >
                   Create game
+                </Link>
+                <Link
+                  activeProps={{ className: 'bg-accent text-accent-foreground' }}
+                  className="relative rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+                  onClick={closeMobile}
+                  to="/notifications"
+                >
+                  <span className="flex items-center gap-2">
+                    <Bell className="h-4 w-4" />
+                    Notifications
+                  </span>
+                  {unreadCount > 0 ? (
+                    <span className="absolute right-2 top-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  ) : null}
                 </Link>
                 <p className="px-3 py-1 text-xs text-muted-foreground">{user.email}</p>
                 <Button

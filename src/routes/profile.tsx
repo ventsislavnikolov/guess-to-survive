@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import { ProtectedRoute } from '@/components/protected-route'
+import { ProfileStatsCard } from '@/components/profile/profile-stats-card'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -303,6 +304,8 @@ function ProfileSettingsPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6">
+      <ProfileStatsCard />
+
       <Card className="border-border bg-card/80 text-card-foreground">
         <CardHeader>
           <CardTitle>Profile settings</CardTitle>

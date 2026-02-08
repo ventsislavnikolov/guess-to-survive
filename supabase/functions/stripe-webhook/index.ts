@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import Stripe from 'https://esm.sh/stripe@14.25.0?target=deno'
 
 import { createAdminClient } from '../_shared/supabase.ts'
+import { sendEmailToUserId } from '../_shared/email.ts'
 
 const JSON_HEADERS = {
   'Content-Type': 'application/json',
@@ -131,6 +132,19 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId
     throw notificationError
   }
 
+  try {
+    await sendEmailToUserId(supabase, userId, {
+      body:
+        paymentType === 'rebuy'
+          ? 'Rebuy payment successful. You are back in the game.'
+          : 'Payment successful. Your spot in the game is confirmed.',
+      subject: paymentType === 'rebuy' ? 'Rebuy confirmed' : 'Payment confirmed',
+      title: paymentType === 'rebuy' ? 'Rebuy confirmed' : 'Payment confirmed',
+    })
+  } catch (emailError) {
+    console.error('Failed to send payment confirmed email', emailError)
+  }
+
   return {
     gameId,
     ignored: false,
@@ -204,6 +218,23 @@ async function handleChargeRefunded(charge: Stripe.Charge, eventId: string) {
     if (notificationsError) {
       throw notificationsError
     }
+
+    await Promise.all(
+      (refundedPayments ?? []).map(async (payment) => {
+        try {
+          await sendEmailToUserId(supabase, payment.user_id, {
+            body:
+              payment.payment_type === 'rebuy'
+                ? 'Your rebuy payment was refunded.'
+                : 'Your entry payment was refunded.',
+            subject: payment.payment_type === 'rebuy' ? 'Rebuy payment refunded' : 'Payment refunded',
+            title: payment.payment_type === 'rebuy' ? 'Rebuy payment refunded' : 'Payment refunded',
+          })
+        } catch (emailError) {
+          console.error('Failed to send refund email', emailError)
+        }
+      }),
+    )
   }
 
   return {
