@@ -1,46 +1,56 @@
-import { Link } from '@tanstack/react-router'
-import { Bell, Menu, X } from 'lucide-react'
-import { useState } from 'react'
+import { Link } from "@tanstack/react-router";
+import { Bell, Menu, X } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
-import { ThemeToggle } from '@/components/theme-toggle'
-import { Button } from '@/components/ui/button'
-import { useAuth } from '@/hooks/use-auth'
-import { useUnreadNotificationCount } from '@/hooks/use-notifications'
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
+import { useUnreadNotificationCount } from "@/hooks/use-notifications";
 
 export function AppHeader() {
-  const { signOut, user } = useAuth()
-  const unreadCount = useUnreadNotificationCount()
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const { signOut, user } = useAuth();
+  const unreadCount = useUnreadNotificationCount();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  const closeMobile = () => setMobileOpen(false)
+  const closeMobile = () => setMobileOpen(false);
+  const handleSignOut = () => {
+    signOut().catch((error) => {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to sign out."
+      );
+    });
+  };
 
   return (
-    <header className="border-b border-border/80 bg-background/80 backdrop-blur">
+    <header className="border-border/80 border-b bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link className="group" onClick={closeMobile} to="/">
-          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground group-hover:text-foreground/80">
+          <p className="text-muted-foreground text-xs uppercase tracking-[0.2em] group-hover:text-foreground/80">
             Guess to Survive
           </p>
-          <p className="text-sm font-semibold text-foreground">Football Survival Game</p>
+          <p className="font-semibold text-foreground text-sm">
+            Football Survival Game
+          </p>
         </Link>
 
         <nav className="hidden items-center gap-2 text-sm md:flex">
           <Link
-            activeProps={{ className: 'bg-accent text-accent-foreground' }}
+            activeProps={{ className: "bg-accent text-accent-foreground" }}
             className="rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
             to="/"
           >
             Home
           </Link>
           <Link
-            activeProps={{ className: 'bg-accent text-accent-foreground' }}
+            activeProps={{ className: "bg-accent text-accent-foreground" }}
             className="rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
             to="/games"
           >
             Games
           </Link>
           <Link
-            activeProps={{ className: 'bg-accent text-accent-foreground' }}
+            activeProps={{ className: "bg-accent text-accent-foreground" }}
             className="rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
             to="/how-it-works"
           >
@@ -49,14 +59,14 @@ export function AppHeader() {
           {user ? (
             <>
               <Link
-                activeProps={{ className: 'bg-accent text-accent-foreground' }}
+                activeProps={{ className: "bg-accent text-accent-foreground" }}
                 className="rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
                 to="/games/create"
               >
                 Create game
               </Link>
               <Link
-                activeProps={{ className: 'bg-accent text-accent-foreground' }}
+                activeProps={{ className: "bg-accent text-accent-foreground" }}
                 className="relative rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
                 to="/notifications"
               >
@@ -65,13 +75,20 @@ export function AppHeader() {
                   Notifications
                 </span>
                 {unreadCount > 0 ? (
-                  <span className="absolute right-1 top-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
-                    {unreadCount > 99 ? '99+' : unreadCount}
+                  <span className="absolute top-1 right-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 font-semibold text-[10px] text-primary-foreground leading-none">
+                    {unreadCount > 99 ? "99+" : unreadCount}
                   </span>
                 ) : null}
               </Link>
-              <span className="hidden text-xs text-muted-foreground sm:inline">{user.email}</span>
-              <Button className="h-9" onClick={() => void signOut()} size="sm" variant="outline">
+              <span className="hidden text-muted-foreground text-xs sm:inline">
+                {user.email}
+              </span>
+              <Button
+                className="h-9"
+                onClick={handleSignOut}
+                size="sm"
+                variant="outline"
+              >
                 Sign out
               </Button>
             </>
@@ -96,32 +113,36 @@ export function AppHeader() {
           size="icon"
           variant="ghost"
         >
-          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          {mobileOpen ? (
+            <X className="h-5 w-5" />
+          ) : (
+            <Menu className="h-5 w-5" />
+          )}
         </Button>
       </div>
 
       {mobileOpen ? (
-        <div className="border-t border-border/80 bg-background md:hidden">
+        <div className="border-border/80 border-t bg-background md:hidden">
           <nav className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-3 sm:px-6">
             <Link
-              activeProps={{ className: 'bg-accent text-accent-foreground' }}
-              className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+              activeProps={{ className: "bg-accent text-accent-foreground" }}
+              className="rounded-md px-3 py-2 text-muted-foreground text-sm hover:bg-accent/70 hover:text-foreground"
               onClick={closeMobile}
               to="/"
             >
               Home
             </Link>
             <Link
-              activeProps={{ className: 'bg-accent text-accent-foreground' }}
-              className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+              activeProps={{ className: "bg-accent text-accent-foreground" }}
+              className="rounded-md px-3 py-2 text-muted-foreground text-sm hover:bg-accent/70 hover:text-foreground"
               onClick={closeMobile}
               to="/games"
             >
               Games
             </Link>
             <Link
-              activeProps={{ className: 'bg-accent text-accent-foreground' }}
-              className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+              activeProps={{ className: "bg-accent text-accent-foreground" }}
+              className="rounded-md px-3 py-2 text-muted-foreground text-sm hover:bg-accent/70 hover:text-foreground"
               onClick={closeMobile}
               to="/how-it-works"
             >
@@ -130,16 +151,20 @@ export function AppHeader() {
             {user ? (
               <>
                 <Link
-                  activeProps={{ className: 'bg-accent text-accent-foreground' }}
-                  className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+                  activeProps={{
+                    className: "bg-accent text-accent-foreground",
+                  }}
+                  className="rounded-md px-3 py-2 text-muted-foreground text-sm hover:bg-accent/70 hover:text-foreground"
                   onClick={closeMobile}
                   to="/games/create"
                 >
                   Create game
                 </Link>
                 <Link
-                  activeProps={{ className: 'bg-accent text-accent-foreground' }}
-                  className="relative rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+                  activeProps={{
+                    className: "bg-accent text-accent-foreground",
+                  }}
+                  className="relative rounded-md px-3 py-2 text-muted-foreground text-sm hover:bg-accent/70 hover:text-foreground"
                   onClick={closeMobile}
                   to="/notifications"
                 >
@@ -148,17 +173,19 @@ export function AppHeader() {
                     Notifications
                   </span>
                   {unreadCount > 0 ? (
-                    <span className="absolute right-2 top-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
-                      {unreadCount > 99 ? '99+' : unreadCount}
+                    <span className="absolute top-1 right-2 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 font-semibold text-[10px] text-primary-foreground leading-none">
+                      {unreadCount > 99 ? "99+" : unreadCount}
                     </span>
                   ) : null}
                 </Link>
-                <p className="px-3 py-1 text-xs text-muted-foreground">{user.email}</p>
+                <p className="px-3 py-1 text-muted-foreground text-xs">
+                  {user.email}
+                </p>
                 <Button
                   className="justify-start"
                   onClick={() => {
-                    closeMobile()
-                    void signOut()
+                    closeMobile();
+                    handleSignOut();
                   }}
                   variant="outline"
                 >
@@ -167,10 +194,19 @@ export function AppHeader() {
               </>
             ) : (
               <>
-                <Button asChild className="w-full justify-start" onClick={closeMobile} variant="ghost">
+                <Button
+                  asChild
+                  className="w-full justify-start"
+                  onClick={closeMobile}
+                  variant="ghost"
+                >
                   <Link to="/auth/login">Login</Link>
                 </Button>
-                <Button asChild className="w-full justify-start" onClick={closeMobile}>
+                <Button
+                  asChild
+                  className="w-full justify-start"
+                  onClick={closeMobile}
+                >
                   <Link to="/auth/signup">Sign up</Link>
                 </Button>
               </>
@@ -178,8 +214,12 @@ export function AppHeader() {
             <div className="px-1 pt-2">
               <ThemeToggle />
             </div>
-            <div className="grid gap-1 px-1 pt-1 text-xs text-muted-foreground">
-              <Link className="rounded-md px-3 py-2 hover:bg-accent/70 hover:text-foreground" onClick={closeMobile} to="/terms">
+            <div className="grid gap-1 px-1 pt-1 text-muted-foreground text-xs">
+              <Link
+                className="rounded-md px-3 py-2 hover:bg-accent/70 hover:text-foreground"
+                onClick={closeMobile}
+                to="/terms"
+              >
                 Terms
               </Link>
               <Link
@@ -194,5 +234,5 @@ export function AppHeader() {
         </div>
       ) : null}
     </header>
-  )
+  );
 }

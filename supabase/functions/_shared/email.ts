@@ -1,30 +1,37 @@
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-type RenderEmailInput = {
-  title: string
-  body?: string | null
-  cta?: { href: string; label: string } | null
-  previewText?: string | null
+interface RenderEmailInput {
+  title: string;
+  body?: string | null;
+  cta?: { href: string; label: string } | null;
+  previewText?: string | null;
 }
 
 function escapeHtml(value: string) {
   return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-export function renderBaseEmail({ title, body, cta, previewText }: RenderEmailInput) {
-  const safeTitle = escapeHtml(title)
-  const safePreview = previewText ? escapeHtml(previewText) : ''
-  const bodyHtml = body ? `<p style="margin:0 0 16px;color:#334155;line-height:1.6;">${escapeHtml(body)}</p>` : ''
+export function renderBaseEmail({
+  title,
+  body,
+  cta,
+  previewText,
+}: RenderEmailInput) {
+  const safeTitle = escapeHtml(title);
+  const safePreview = previewText ? escapeHtml(previewText) : "";
+  const bodyHtml = body
+    ? `<p style="margin:0 0 16px;color:#334155;line-height:1.6;">${escapeHtml(body)}</p>`
+    : "";
   const ctaHtml = cta
     ? `<p style="margin:24px 0 0;"><a href="${cta.href}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:12px 16px;border-radius:10px;font-weight:600;">${escapeHtml(
-        cta.label,
+        cta.label
       )}</a></p>`
-    : ''
+    : "";
 
   return `<!doctype html>
 <html>
@@ -59,28 +66,33 @@ export function renderBaseEmail({ title, body, cta, previewText }: RenderEmailIn
       </tr>
     </table>
   </body>
-</html>`
+</html>`;
 }
 
-type SendEmailInput = {
-  html: string
-  subject: string
-  to: string
+interface SendEmailInput {
+  html: string;
+  subject: string;
+  to: string;
 }
 
 export async function sendResendEmail({ html, subject, to }: SendEmailInput) {
-  const apiKey = Deno.env.get('RESEND_API_KEY')
+  const apiKey = Deno.env.get("RESEND_API_KEY");
   if (!apiKey) {
-    return { skipped: true as const, reason: 'missing_resend_api_key' as const }
+    return {
+      skipped: true as const,
+      reason: "missing_resend_api_key" as const,
+    };
   }
 
-  const from = Deno.env.get('RESEND_FROM_EMAIL') ?? 'Guess to Survive <onboarding@resend.dev>'
+  const from =
+    Deno.env.get("RESEND_FROM_EMAIL") ??
+    "Guess to Survive <onboarding@resend.dev>";
 
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       from,
@@ -88,14 +100,14 @@ export async function sendResendEmail({ html, subject, to }: SendEmailInput) {
       subject,
       to,
     }),
-  })
+  });
 
   if (!response.ok) {
-    const payload = await response.text().catch(() => '')
-    throw new Error(`Resend API failed (${response.status}): ${payload}`)
+    const payload = await response.text().catch(() => "");
+    throw new Error(`Resend API failed (${response.status}): ${payload}`);
   }
 
-  return { skipped: false as const }
+  return { skipped: false as const };
 }
 
 export async function sendEmailToUserId(
@@ -107,30 +119,33 @@ export async function sendEmailToUserId(
     previewText,
     subject,
     title,
-  }: { subject: string; title: string; body?: string | null; previewText?: string | null; cta?: RenderEmailInput['cta'] },
+  }: {
+    subject: string;
+    title: string;
+    body?: string | null;
+    previewText?: string | null;
+    cta?: RenderEmailInput["cta"];
+  }
 ) {
-  const {
-    data: userResult,
-    error: userError,
-  } = await supabase.auth.admin.getUserById(userId)
+  const { data: userResult, error: userError } =
+    await supabase.auth.admin.getUserById(userId);
 
   if (userError) {
-    throw userError
+    throw userError;
   }
 
-  const email = userResult.user?.email
+  const email = userResult.user?.email;
   if (!email) {
-    return { skipped: true as const, reason: 'missing_user_email' as const }
+    return { skipped: true as const, reason: "missing_user_email" as const };
   }
 
-  const appBaseUrl = Deno.env.get('APP_BASE_URL') ?? 'http://localhost:5173'
+  const appBaseUrl = Deno.env.get("APP_BASE_URL") ?? "http://localhost:5173";
   const html = renderBaseEmail({
     title,
     body,
     previewText,
-    cta: cta ?? { href: appBaseUrl, label: 'Open Guess to Survive' },
-  })
+    cta: cta ?? { href: appBaseUrl, label: "Open Guess to Survive" },
+  });
 
-  return await sendResendEmail({ html, subject, to: email })
+  return await sendResendEmail({ html, subject, to: email });
 }
-

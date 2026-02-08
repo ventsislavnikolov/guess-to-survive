@@ -1,8 +1,8 @@
-import { AppFooter } from '@/components/layout/app-footer'
-import { AppHeader } from '@/components/layout/app-header'
+import { AppFooter } from "@/components/layout/app-footer";
+import { AppHeader } from "@/components/layout/app-header";
 
-type AppLayoutProps = {
-  children: React.ReactNode
+interface AppLayoutProps {
+  children: React.ReactNode;
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
@@ -14,17 +14,20 @@ export function AppLayout({ children }: AppLayoutProps) {
       />
       <div className="relative flex min-h-screen flex-col">
         <a
-          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:border focus:border-border focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-sm"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-md focus:border focus:border-border focus:bg-background focus:px-3 focus:py-2 focus:font-medium focus:text-foreground focus:text-sm focus:shadow-sm"
           href="#main-content"
         >
           Skip to content
         </a>
         <AppHeader />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6" id="main-content">
+        <main
+          className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6"
+          id="main-content"
+        >
           {children}
         </main>
         <AppFooter />
       </div>
     </div>
-  )
+  );
 }

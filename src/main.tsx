@@ -1,29 +1,38 @@
-import { lazy, StrictMode, Suspense } from 'react'
-import { createRoot } from 'react-dom/client'
-import { RouterProvider, createRouter } from '@tanstack/react-router'
-import { QueryClientProvider } from '@tanstack/react-query'
-import './index.css'
-import { AuthProvider } from '@/contexts/auth-provider'
-import { queryClient } from '@/lib/query-client'
-import { ThemeProvider } from '@/components/theme-provider'
-import { routeTree } from './routeTree.gen'
-import { initAnalytics } from '@/lib/analytics'
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createRouter, RouterProvider } from "@tanstack/react-router";
+import { lazy, StrictMode, Suspense } from "react";
+import { createRoot } from "react-dom/client";
+import "./index.css";
+import { ThemeProvider } from "@/components/theme-provider";
+import { AuthProvider } from "@/contexts/auth-provider";
+import { initAnalytics } from "@/lib/analytics";
+import { queryClient } from "@/lib/query-client";
+import { routeTree } from "./routeTree.gen";
 
-const router = createRouter({ routeTree })
+const router = createRouter({ routeTree });
 
 const ReactQueryDevtools = import.meta.env.DEV
-  ? lazy(() => import('@tanstack/react-query-devtools').then((mod) => ({ default: mod.ReactQueryDevtools })))
-  : null
+  ? lazy(() =>
+      import("@tanstack/react-query-devtools").then((mod) => ({
+        default: mod.ReactQueryDevtools,
+      }))
+    )
+  : null;
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface Register {
-    router: typeof router
+    router: typeof router;
   }
 }
 
-initAnalytics()
+initAnalytics();
 
-createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById("root");
+if (!rootElement) {
+  throw new Error("Root element not found");
+}
+
+createRoot(rootElement).render(
   <StrictMode>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <QueryClientProvider client={queryClient}>
@@ -37,5 +46,5 @@ createRoot(document.getElementById('root')!).render(
         ) : null}
       </QueryClientProvider>
     </ThemeProvider>
-  </StrictMode>,
-)
+  </StrictMode>
+);
