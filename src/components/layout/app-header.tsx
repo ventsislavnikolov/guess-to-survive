@@ -67,22 +67,23 @@ export function AppHeader() {
               </Link>
               <Link
                 activeProps={{ className: "bg-accent text-accent-foreground" }}
-                className="relative rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
+                aria-label="Notifications"
+                className="relative inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
                 to="/notifications"
               >
-                <span className="flex items-center gap-2">
-                  <Bell className="h-4 w-4" />
-                  Notifications
-                </span>
+                <Bell className="h-4 w-4" />
                 {unreadCount > 0 ? (
                   <span className="absolute top-1 right-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 font-semibold text-[10px] text-primary-foreground leading-none">
                     {unreadCount > 99 ? "99+" : unreadCount}
                   </span>
                 ) : null}
               </Link>
-              <span className="hidden text-muted-foreground text-xs sm:inline">
+              <Link
+                className="hidden max-w-[220px] truncate rounded-md px-2 py-1 text-muted-foreground text-xs transition hover:bg-accent/60 hover:text-foreground sm:inline"
+                to="/profile"
+              >
                 {user.email}
-              </span>
+              </Link>
               <Button
                 className="h-9"
                 onClick={handleSignOut}
@@ -159,6 +160,16 @@ export function AppHeader() {
                   to="/games/create"
                 >
                   Create game
+                </Link>
+                <Link
+                  activeProps={{
+                    className: "bg-accent text-accent-foreground",
+                  }}
+                  className="rounded-md px-3 py-2 text-muted-foreground text-sm hover:bg-accent/70 hover:text-foreground"
+                  onClick={closeMobile}
+                  to="/profile"
+                >
+                  Profile
                 </Link>
                 <Link
                   activeProps={{
