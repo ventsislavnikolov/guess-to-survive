@@ -11,6 +11,7 @@ import { type ReactNode, useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import { useExampleRoundSnapshot } from "@/hooks/use-example-round";
 import { setPageMeta } from "@/lib/meta";
 
 export const Route = createFileRoute("/how-it-works")({
@@ -19,6 +20,13 @@ export const Route = createFileRoute("/how-it-works")({
 
 function HowItWorksPage() {
   const { user } = useAuth();
+  const exampleRound = useExampleRoundSnapshot();
+  const example = exampleRound.data;
+  const examplePickName = example
+    ? example.pickTeam.short_name || example.pickTeam.name
+    : "your team";
+  const exampleRoundLabel = example ? `Round ${example.round}` : "a round";
+  const exampleScoreline = example ? example.resultScoreline : "a win";
 
   useEffect(() => {
     setPageMeta({
@@ -140,16 +148,16 @@ function HowItWorksPage() {
         <div className="rounded-3xl border border-border/80 bg-card/70 p-6 shadow-sm sm:p-8">
           <ol className="space-y-5">
             <TimelineItem
-              text="It’s Round 6. Arsenal are favorites, but you’re spending a valuable pick."
-              title="You pick Arsenal to win"
+              text={`It’s ${exampleRoundLabel}. ${examplePickName} looks like the safe pick, but you’re spending a valuable team.`}
+              title={`You pick ${examplePickName} to win`}
             />
             <TimelineItem
               text="You can’t change after the first match starts. No late switches."
               title="Kickoff locks your choice"
             />
             <TimelineItem
-              text="You survive to the next round. Arsenal are now unavailable for you in this game."
-              title="Arsenal win 2–1"
+              text={`You survive to the next round. ${examplePickName} is now unavailable for you in this game.`}
+              title={`Your pick wins ${exampleScoreline}`}
             />
             <TimelineItem
               text="You must pick a different team. The pool shrinks."

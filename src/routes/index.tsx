@@ -11,6 +11,12 @@ import { type ReactNode, useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  formatExampleLeagueBadge,
+  formatExamplePickHeadline,
+  formatExamplePickHelper,
+  useExampleRoundSnapshot,
+} from "@/hooks/use-example-round";
 import { useGames } from "@/hooks/use-games";
 import { setPageMeta } from "@/lib/meta";
 
@@ -44,6 +50,7 @@ function formatCurrency(value: number | null, currency: string) {
 
 function IndexRoute() {
   const { user } = useAuth();
+  const exampleRound = useExampleRoundSnapshot();
   const featuredGames = useGames({
     page: 1,
     pageSize: 6,
@@ -62,6 +69,42 @@ function IndexRoute() {
   }, []);
 
   const games = featuredGames.data?.games ?? [];
+  const example = exampleRound.data;
+
+  const heroLeagueBadge = formatExampleLeagueBadge(example?.league ?? null);
+  const examplePickHeadline = example
+    ? formatExamplePickHeadline(example.pickTeam)
+    : "Example pick";
+  const examplePickHelper = example
+    ? formatExamplePickHelper(example.pickTeam)
+    : "This preview updates automatically from real fixtures.";
+  const exampleScoreline = example?.resultScoreline ?? "—";
+  let exampleOutcome = "TBD";
+  if (example) {
+    exampleOutcome = example.outcomeLabel;
+  } else if (exampleRound.isLoading) {
+    exampleOutcome = "Loading";
+  }
+
+  const kickoffLabel = (() => {
+    if (!example?.kickoffTime) {
+      return "—";
+    }
+
+    try {
+      const kickoffDate = new Date(example.kickoffTime);
+      if (!Number.isFinite(kickoffDate.getTime())) {
+        return "—";
+      }
+
+      return new Intl.DateTimeFormat("en-US", {
+        day: "numeric",
+        month: "short",
+      }).format(kickoffDate);
+    } catch {
+      return "—";
+    }
+  })();
 
   let featuredGridContent: ReactNode;
   if (featuredGames.isLoading) {
@@ -197,7 +240,7 @@ function IndexRoute() {
           <div className="fade-in slide-in-from-bottom-4 animate-in duration-700">
             <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground uppercase tracking-[0.22em] backdrop-blur">
               <Sparkles className="h-3.5 w-3.5" />
-              EPL survival pools
+              {heroLeagueBadge}
             </div>
 
             <h1 className="mt-4 font-display font-semibold text-4xl text-foreground leading-[1.05] sm:text-5xl">
@@ -263,10 +306,10 @@ function IndexRoute() {
                       Example round
                     </p>
                     <p className="mt-2 font-display font-semibold text-foreground text-xl leading-tight">
-                      Your pick: Arsenal
+                      {examplePickHeadline}
                     </p>
                     <p className="mt-1 text-muted-foreground text-sm">
-                      You cannot use Arsenal again this game.
+                      {examplePickHelper}
                     </p>
                   </div>
                   <div className="rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-center">
@@ -274,18 +317,24 @@ function IndexRoute() {
                       Result
                     </p>
                     <p className="mt-1 font-display font-semibold text-foreground text-lg">
-                      2-1
+                      {exampleScoreline}
                     </p>
                     <p className="font-medium text-foreground text-xs">
-                      Survived
+                      {exampleOutcome}
                     </p>
                   </div>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <MiniStat label="Round" value="6" />
-                  <MiniStat label="Alive" value="124" />
-                  <MiniStat label="Eliminated" value="57" />
+                  <MiniStat
+                    label="Round"
+                    value={example ? `${example.round}` : "—"}
+                  />
+                  <MiniStat label="Kickoff" value={kickoffLabel} />
+                  <MiniStat
+                    label="League"
+                    value={example?.league?.code ?? "—"}
+                  />
                 </div>
 
                 <div className="rounded-xl border border-border/70 bg-card/50 p-4">
