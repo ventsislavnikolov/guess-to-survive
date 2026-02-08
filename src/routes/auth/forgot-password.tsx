@@ -38,7 +38,7 @@ function ForgotPasswordPage() {
   }
 
   return (
-    <main className="grid min-h-[70vh] place-items-center p-6">
+    <section aria-label="Forgot password" className="grid min-h-[70vh] place-items-center p-6">
       <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
         <CardHeader>
           <CardTitle>Forgot password</CardTitle>
@@ -77,6 +77,6 @@ function ForgotPasswordPage() {
           )}
         </CardContent>
       </Card>
-    </main>
+    </section>
   )
 }

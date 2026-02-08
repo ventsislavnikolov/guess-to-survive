@@ -65,6 +65,24 @@ async function getAuthenticatedUser(request: Request) {
   return user
 }
 
+async function assertNotSelfExcluded(supabase: ReturnType<typeof createAdminClient>, userId: string) {
+  const { data, error } = await supabase.from('profiles').select('self_excluded_until').eq('id', userId).maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  const until = data?.self_excluded_until ?? null
+  if (!until) {
+    return
+  }
+
+  const untilTime = new Date(until).getTime()
+  if (Number.isFinite(untilTime) && untilTime > Date.now()) {
+    throw new Error(`You are self-excluded from paid games until ${until}.`)
+  }
+}
+
 serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response(null, { headers: CORS_HEADERS })
@@ -92,6 +110,7 @@ serve(async (request) => {
     }
 
     const supabase = createAdminClient()
+    await assertNotSelfExcluded(supabase, user.id)
     const { data: game, error: gameError } = await supabase
       .from('games')
       .select('currency, entry_fee, id, max_players, name, status')

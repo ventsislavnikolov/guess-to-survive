@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { signUp } from '@/lib/auth'
+import { track } from '@/lib/analytics'
 
 export const Route = createFileRoute('/auth/signup')({
   component: SignUpPage,
@@ -26,6 +27,7 @@ function SignUpPage() {
 
     try {
       await signUp(email, password)
+      track('auth_sign_up', { method: 'email' })
       toast.success('Account created. Check your email for verification.')
       setSuccess(true)
     } catch (signupError) {
@@ -39,7 +41,7 @@ function SignUpPage() {
 
   if (success) {
     return (
-      <main className="grid min-h-[70vh] place-items-center p-6">
+      <section aria-label="Sign up success" className="grid min-h-[70vh] place-items-center p-6">
         <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
           <CardContent className="space-y-4 pt-6 text-center">
             <p className="text-lg font-medium">Check your email to confirm your account.</p>
@@ -48,12 +50,12 @@ function SignUpPage() {
             </Link>
           </CardContent>
         </Card>
-      </main>
+      </section>
     )
   }
 
   return (
-    <main className="grid min-h-[70vh] place-items-center p-6">
+    <section aria-label="Sign up" className="grid min-h-[70vh] place-items-center p-6">
       <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
         <CardHeader>
           <CardTitle>Sign up</CardTitle>
@@ -87,6 +89,10 @@ function SignUpPage() {
             <Button className="w-full" disabled={loading} type="submit">
               {loading ? 'Signing up...' : 'Sign up'}
             </Button>
+            <p className="text-xs text-muted-foreground">
+              Responsible gaming: paid games involve real money. Set limits that work for you, and use self-exclusion any
+              time from your profile.
+            </p>
           </form>
           <p className="mt-4 text-center text-sm text-muted-foreground">
             Already have an account?{' '}
@@ -96,6 +102,6 @@ function SignUpPage() {
           </p>
         </CardContent>
       </Card>
-    </main>
+    </section>
   )
 }

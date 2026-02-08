@@ -9,8 +9,10 @@ export function ThemeToggle() {
   const activeTheme = theme ?? 'system'
 
   return (
-    <div className="inline-flex rounded-md border border-border/80 bg-muted/40 p-0.5">
+    <div className="inline-flex rounded-md border border-border/80 bg-muted/40 p-0.5" role="group" aria-label="Theme">
       <Button
+        aria-label="Light theme"
+        aria-pressed={activeTheme === 'light'}
         className={cn(
           'h-7 px-2.5',
           activeTheme === 'light' ? 'bg-background shadow-sm' : 'bg-transparent',
@@ -23,6 +25,8 @@ export function ThemeToggle() {
         <Sun className="h-3.5 w-3.5" />
       </Button>
       <Button
+        aria-label="Dark theme"
+        aria-pressed={activeTheme === 'dark'}
         className={cn(
           'h-7 px-2.5',
           activeTheme === 'dark' ? 'bg-background shadow-sm' : 'bg-transparent',
@@ -35,6 +39,8 @@ export function ThemeToggle() {
         <Moon className="h-3.5 w-3.5" />
       </Button>
       <Button
+        aria-label="System theme"
+        aria-pressed={activeTheme === 'system'}
         className={cn(
           'h-7 px-2.5',
           activeTheme === 'system' ? 'bg-background shadow-sm' : 'bg-transparent',

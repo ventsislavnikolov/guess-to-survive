@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/hooks/use-auth'
+import { track } from '@/lib/analytics'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
 
@@ -66,7 +67,13 @@ export function useMakePick() {
 
       return payload as { action: 'created' | 'noop' | 'updated'; pickId?: number }
     },
-    onSuccess: (_, { gameId }) => {
+    onSuccess: (payload, { gameId, round, teamId }) => {
+      track('pick_submitted', {
+        action: payload.action,
+        gameId,
+        round,
+        teamId,
+      })
       queryClient.invalidateQueries({ queryKey: ['my-picks', gameId, user?.id] })
       queryClient.invalidateQueries({ queryKey: ['game', gameId] })
       queryClient.invalidateQueries({ queryKey: ['notifications'] })

@@ -55,10 +55,25 @@ function PickRoute() {
 
 function PickPage() {
   const { gameId } = Route.useParams()
-  const { data: game, isLoading: isGameLoading } = useGame(gameId)
+  const {
+    data: game,
+    error: gameError,
+    isError: isGameError,
+    isLoading: isGameLoading,
+  } = useGame(gameId)
   const round = game?.current_round ?? game?.starting_round ?? null
-  const { data: availableTeams, isLoading: isTeamsLoading } = useAvailableTeams(gameId, round)
-  const { data: myPicks, isLoading: isPicksLoading } = useMyPicks(gameId)
+  const {
+    data: availableTeams,
+    error: teamsError,
+    isError: isTeamsError,
+    isLoading: isTeamsLoading,
+  } = useAvailableTeams(gameId, round)
+  const {
+    data: myPicks,
+    error: picksError,
+    isError: isPicksError,
+    isLoading: isPicksLoading,
+  } = useMyPicks(gameId)
   const makePick = useMakePick()
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -119,6 +134,58 @@ function PickPage() {
     )
   }
 
+  if (isGameError) {
+    return (
+      <section className="space-y-4">
+        <Card className="border-border bg-card/70">
+          <CardHeader>
+            <CardTitle>Unable to load pick selection</CardTitle>
+            <CardDescription>{gameError instanceof Error ? gameError.message : 'Please try again.'}</CardDescription>
+          </CardHeader>
+        </Card>
+        <Button asChild variant="outline">
+          <Link to="/games">Back to games</Link>
+        </Button>
+      </section>
+    )
+  }
+
+  if (isTeamsError) {
+    return (
+      <section className="space-y-4">
+        <Card className="border-border bg-card/70">
+          <CardHeader>
+            <CardTitle>Unable to load available teams</CardTitle>
+            <CardDescription>{teamsError instanceof Error ? teamsError.message : 'Please try again.'}</CardDescription>
+          </CardHeader>
+        </Card>
+        <Button asChild variant="outline">
+          <Link params={{ gameId }} search={{}} to="/games/$gameId">
+            Back to game
+          </Link>
+        </Button>
+      </section>
+    )
+  }
+
+  if (isPicksError) {
+    return (
+      <section className="space-y-4">
+        <Card className="border-border bg-card/70">
+          <CardHeader>
+            <CardTitle>Unable to load your picks</CardTitle>
+            <CardDescription>{picksError instanceof Error ? picksError.message : 'Please try again.'}</CardDescription>
+          </CardHeader>
+        </Card>
+        <Button asChild variant="outline">
+          <Link params={{ gameId }} search={{}} to="/games/$gameId">
+            Back to game
+          </Link>
+        </Button>
+      </section>
+    )
+  }
+
   if (!game) {
     return (
       <section className="space-y-4">
@@ -128,9 +195,31 @@ function PickPage() {
             <CardDescription>The game is missing or unavailable.</CardDescription>
           </CardHeader>
         </Card>
-        <Link params={{ gameId }} search={{}} to="/games/$gameId">
-          <Button variant="outline">Back to game</Button>
-        </Link>
+        <Button asChild variant="outline">
+          <Link params={{ gameId }} search={{}} to="/games/$gameId">
+            Back to game
+          </Link>
+        </Button>
+      </section>
+    )
+  }
+
+  if (!availableTeams || availableTeams.length === 0) {
+    return (
+      <section className="space-y-4">
+        <Card className="border-border bg-card/70">
+          <CardHeader>
+            <CardTitle>No fixtures available</CardTitle>
+            <CardDescription>
+              Fixtures for this round are not available yet. Please check back later.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+        <Button asChild variant="outline">
+          <Link params={{ gameId }} search={{}} to="/games/$gameId">
+            Back to game
+          </Link>
+        </Button>
       </section>
     )
   }
@@ -157,9 +246,11 @@ function PickPage() {
           <p className="mt-1 text-sm text-muted-foreground">Round {roundLabel} selection</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link params={{ gameId }} search={{}} to="/games/$gameId">
-            <Button variant="outline">Back to game</Button>
-          </Link>
+          <Button asChild variant="outline">
+            <Link params={{ gameId }} search={{}} to="/games/$gameId">
+              Back to game
+            </Link>
+          </Button>
           <Button
             disabled={
               !selectedTeamId ||

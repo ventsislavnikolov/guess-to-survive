@@ -106,18 +106,18 @@ function ResetPasswordPage() {
 
   if (verifying) {
     return (
-      <main className="grid min-h-[70vh] place-items-center p-6">
+      <section aria-label="Verifying reset link" className="grid min-h-[70vh] place-items-center p-6">
         <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
           <CardContent className="pt-6 text-center">
             <LoadingSpinner className="justify-center" label="Verifying reset link..." />
           </CardContent>
         </Card>
-      </main>
+      </section>
     )
   }
 
   return (
-    <main className="grid min-h-[70vh] place-items-center p-6">
+    <section aria-label="Reset password" className="grid min-h-[70vh] place-items-center p-6">
       <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
         <CardHeader>
           <CardTitle>Reset password</CardTitle>
@@ -167,6 +167,6 @@ function ResetPasswordPage() {
           )}
         </CardContent>
       </Card>
-    </main>
+    </section>
   )
 }

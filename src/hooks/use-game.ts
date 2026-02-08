@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/hooks/use-auth'
+import { storeCheckoutContext, track } from '@/lib/analytics'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
 
@@ -140,6 +141,7 @@ export function useJoinGame() {
       return data
     },
     onSuccess: (_, gameId) => {
+      track('game_joined', { gameId, paymentType: 'free' })
       queryClient.invalidateQueries({ queryKey: ['game', gameId] })
       queryClient.invalidateQueries({ queryKey: ['games'] })
     },
@@ -209,6 +211,23 @@ export function useCreateCheckout() {
         throw new Error('You must be signed in to start checkout.')
       }
 
+      let isFirstPaid = false
+      try {
+        const { count, error } = await supabase
+          .from('payments')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('payment_type', 'entry')
+          .eq('status', 'succeeded')
+          .gt('total_amount', 0)
+
+        if (!error) {
+          isFirstPaid = (count ?? 0) === 0
+        }
+      } catch {
+        // If we cannot read payments (RLS, offline, etc.), proceed with checkout anyway.
+      }
+
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout`, {
         body: JSON.stringify({ gameId }),
         headers: {
@@ -224,7 +243,30 @@ export function useCreateCheckout() {
         throw new Error(payload?.error ?? 'Unable to create checkout session.')
       }
 
-      return payload as CreateCheckoutResponse
+      const typedPayload = payload as CreateCheckoutResponse
+
+      storeCheckoutContext({
+        createdAt: Date.now(),
+        currency: typedPayload.currency,
+        entryFee: typedPayload.entryFee,
+        gameId,
+        isFirstPaid,
+        paymentType: 'entry',
+        processingFee: typedPayload.processingFee,
+        total: typedPayload.total,
+      })
+
+      track('checkout_created', {
+        currency: typedPayload.currency,
+        entryFee: typedPayload.entryFee,
+        gameId,
+        isFirstPaid,
+        paymentType: 'entry',
+        processingFee: typedPayload.processingFee,
+        total: typedPayload.total,
+      })
+
+      return typedPayload
     },
   })
 }
@@ -253,7 +295,30 @@ export function useCreateRebuyCheckout() {
         throw new Error(payload?.error ?? 'Unable to create rebuy checkout session.')
       }
 
-      return payload as CreateCheckoutResponse
+      const typedPayload = payload as CreateCheckoutResponse
+
+      storeCheckoutContext({
+        createdAt: Date.now(),
+        currency: typedPayload.currency,
+        entryFee: typedPayload.entryFee,
+        gameId,
+        isFirstPaid: false,
+        paymentType: 'rebuy',
+        processingFee: typedPayload.processingFee,
+        total: typedPayload.total,
+      })
+
+      track('checkout_created', {
+        currency: typedPayload.currency,
+        entryFee: typedPayload.entryFee,
+        gameId,
+        isFirstPaid: false,
+        paymentType: 'rebuy',
+        processingFee: typedPayload.processingFee,
+        total: typedPayload.total,
+      })
+
+      return typedPayload
     },
   })
 }

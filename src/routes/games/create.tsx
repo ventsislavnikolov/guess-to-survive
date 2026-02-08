@@ -172,7 +172,7 @@ function CreateGamePage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-4xl p-4 sm:p-6">
+    <section className="mx-auto w-full max-w-4xl p-4 sm:p-6">
       <Card className="border-border bg-card/80 text-card-foreground">
         <CardHeader>
           <CardTitle>Create game</CardTitle>
@@ -312,6 +312,6 @@ function CreateGamePage() {
           </form>
         </CardContent>
       </Card>
-    </main>
+    </section>
   )
 }

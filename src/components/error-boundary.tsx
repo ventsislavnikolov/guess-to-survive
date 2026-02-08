@@ -22,9 +22,9 @@ export function AppErrorBoundary({ error, reset }: ErrorComponentProps) {
             <Button onClick={reset} type="button" variant="outline">
               Try again
             </Button>
-            <Link to="/">
-              <Button type="button">Back to home</Button>
-            </Link>
+            <Button asChild>
+              <Link to="/">Back to home</Link>
+            </Button>
           </div>
           {import.meta.env.DEV && error.stack ? (
             <details className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">

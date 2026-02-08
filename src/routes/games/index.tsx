@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -7,6 +7,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
 import { useGames } from '@/hooks/use-games'
+import { setPageMeta } from '@/lib/meta'
 
 const PAGE_SIZE = 12
 const MIN_ENTRY_FEE = 1
@@ -44,6 +45,14 @@ function GamesPage() {
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [minEntryFee, setMinEntryFee] = useState(MIN_ENTRY_FEE)
   const [maxEntryFee, setMaxEntryFee] = useState(MAX_ENTRY_FEE)
+
+  useEffect(() => {
+    setPageMeta({
+      description: 'Browse public football survival pools and join the next round.',
+      title: 'Game browser | Guess to Survive',
+      url: window.location.href,
+    })
+  }, [])
 
   const { data, error, isError, isFetching, isLoading } = useGames({
     maxEntryFee: paymentFilter === 'paid' ? maxEntryFee : undefined,
@@ -117,9 +126,9 @@ function GamesPage() {
         <div className="flex items-center gap-3">
           {isFetching && !isLoading ? <LoadingSpinner label="Refreshing games..." size="sm" /> : null}
           {user ? (
-            <Link to="/games/create">
-              <Button>Create game</Button>
-            </Link>
+            <Button asChild>
+              <Link to="/games/create">Create game</Link>
+            </Button>
           ) : null}
         </div>
       </div>
@@ -257,9 +266,9 @@ function GamesPage() {
           </CardHeader>
           {user ? (
             <CardContent>
-              <Link to="/games/create">
-                <Button>Create your first game</Button>
-              </Link>
+              <Button asChild>
+                <Link to="/games/create">Create your first game</Link>
+              </Button>
             </CardContent>
           ) : null}
         </Card>

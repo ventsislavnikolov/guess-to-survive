@@ -41,6 +41,10 @@ export function CheckoutSummary({ currency, entryFee, isPending, onCheckout }: C
         <p className="text-xs text-muted-foreground">
           If checkout fails or is cancelled, you can retry from this page.
         </p>
+        <p className="text-xs text-muted-foreground">
+          Responsible gaming: only spend what you can afford to lose. You can review your spending history and enable
+          self-exclusion from your profile.
+        </p>
       </CardContent>
     </Card>
   )

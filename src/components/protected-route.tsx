@@ -12,9 +12,9 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   if (loading) {
     return (
-      <main className="grid min-h-[60vh] place-items-center p-6">
+      <section aria-label="Checking session" className="grid min-h-[60vh] place-items-center p-6">
         <LoadingSpinner label="Checking session..." />
-      </main>
+      </section>
     )
   }
 

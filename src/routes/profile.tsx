@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { useAuth } from '@/hooks/use-auth'
 import { useCreateConnectAccount, usePaymentHistory, useProfile, useUpdateProfile } from '@/hooks/use-profile'
+import { useSelfExclusion, useSetSelfExclusion } from '@/hooks/use-responsible-gaming'
 import { supabase } from '@/lib/supabase'
 
 export const Route = createFileRoute('/profile')({
@@ -120,6 +121,9 @@ function ProfileSettingsPage() {
   const [deleteConfirmationValue, setDeleteConfirmationValue] = useState('')
   const [deletePending, setDeletePending] = useState(false)
   const currentAvatar = avatarValue ?? profile?.avatar_url ?? ''
+  const { data: selfExclusion } = useSelfExclusion()
+  const setSelfExclusion = useSetSelfExclusion()
+  const [selfExclusionDays, setSelfExclusionDays] = useState(7)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -281,6 +285,53 @@ function ProfileSettingsPage() {
     }
   }
 
+  const formatDateTimeShort = (value: string | null) => {
+    if (!value) {
+      return '-'
+    }
+
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(value))
+    } catch {
+      return value
+    }
+  }
+
+  const exclusionUntil = selfExclusion?.self_excluded_until ?? null
+  const exclusionActive = exclusionUntil ? new Date(exclusionUntil).getTime() > Date.now() : false
+
+  const handleEnableSelfExclusion = async () => {
+    const days = Math.max(1, Math.min(365, Math.floor(selfExclusionDays)))
+    const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+
+    if (!window.confirm(`Enable self-exclusion for ${days} day(s)? You won’t be able to join paid games until it expires.`)) {
+      return
+    }
+
+    try {
+      await setSelfExclusion.mutateAsync(until)
+      toast.success('Self-exclusion enabled.')
+    } catch (exclusionError) {
+      toast.error(exclusionError instanceof Error ? exclusionError.message : 'Unable to enable self-exclusion.')
+    }
+  }
+
+  const handleClearSelfExclusion = async () => {
+    if (!window.confirm('Clear self-exclusion?')) {
+      return
+    }
+
+    try {
+      await setSelfExclusion.mutateAsync(null)
+      toast.success('Self-exclusion cleared.')
+    } catch (exclusionError) {
+      toast.error(exclusionError instanceof Error ? exclusionError.message : 'Unable to clear self-exclusion.')
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="grid min-h-[60vh] place-items-center">
@@ -305,6 +356,57 @@ function ProfileSettingsPage() {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6">
       <ProfileStatsCard />
+
+      <Card className="border-border bg-card/80 text-card-foreground">
+        <CardHeader>
+          <CardTitle>Responsible gaming</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            Use self-exclusion if you want to take a break from paid games. Free games remain available.
+          </p>
+          <div className="rounded-lg border border-border/60 bg-card/70 p-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Self-exclusion</p>
+            <p className="mt-2 text-sm">
+              Status:{' '}
+              {exclusionActive ? (
+                <span className="font-semibold text-amber-300">Active until {formatDateTimeShort(exclusionUntil)}</span>
+              ) : (
+                <span className="font-semibold text-emerald-300">Not active</span>
+              )}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <label className="text-xs text-muted-foreground" htmlFor="self-exclusion-days">
+                Days
+              </label>
+              <input
+                className="h-9 w-24 rounded-md border border-input bg-background px-3 text-sm"
+                id="self-exclusion-days"
+                max={365}
+                min={1}
+                onChange={(event) => setSelfExclusionDays(Number(event.target.value))}
+                step={1}
+                type="number"
+                value={selfExclusionDays}
+              />
+              <Button disabled={setSelfExclusion.isPending} onClick={() => void handleEnableSelfExclusion()} size="sm">
+                Enable
+              </Button>
+              <Button
+                disabled={setSelfExclusion.isPending || !exclusionUntil}
+                onClick={() => void handleClearSelfExclusion()}
+                size="sm"
+                variant="outline"
+              >
+                Clear
+              </Button>
+              <Link className="text-xs text-muted-foreground underline" to="/spending-history">
+                View spending history
+              </Link>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-border bg-card/80 text-card-foreground">
         <CardHeader>

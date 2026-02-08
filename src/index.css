@@ -5,7 +5,9 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body);
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -44,6 +46,14 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-body {
+  font-family: var(--font-body);
 }
 
 @theme inline {

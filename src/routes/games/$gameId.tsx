@@ -4,6 +4,9 @@ import { toast } from 'sonner'
 
 import { CheckoutSummary } from '@/components/checkout-summary'
 import { GameLeaderboard } from '@/components/game-leaderboard'
+import { GameInviteShareCard } from '@/components/share/game-invite-share-card'
+import { ResultShareCard } from '@/components/share/result-share-card'
+import { ShareButtons } from '@/components/share/share-buttons'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
@@ -16,6 +19,8 @@ import {
   useKickPlayerWithRefund,
   useLeaveGame,
 } from '@/hooks/use-game'
+import { setPageMeta } from '@/lib/meta'
+import { clearCheckoutContext, readCheckoutContext, track } from '@/lib/analytics'
 
 export const Route = createFileRoute('/games/$gameId')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -97,6 +102,49 @@ function GameDetailPage() {
       return
     }
 
+    const checkoutContext = readCheckoutContext(gameId)
+
+    try {
+      const storageKey = `gts_checkout_return_tracked_v1:${window.location.href}`
+      const alreadyTracked = window.sessionStorage.getItem(storageKey) === '1'
+      if (!alreadyTracked) {
+        window.sessionStorage.setItem(storageKey, '1')
+
+        const outcome = checkout ?? rebuy ?? 'unknown'
+        const paymentType = checkout ? 'entry' : 'rebuy'
+
+        track('checkout_returned', {
+          gameId,
+          outcome,
+          paymentType,
+          isFirstPaid: checkoutContext?.isFirstPaid ?? null,
+          currency: checkoutContext?.currency ?? null,
+          entryFee: checkoutContext?.entryFee ?? null,
+          processingFee: checkoutContext?.processingFee ?? null,
+          total: checkoutContext?.total ?? null,
+        })
+
+        if (checkout === 'success') {
+          track('game_joined', {
+            gameId,
+            paymentType: 'paid',
+            isFirstPaid: checkoutContext?.isFirstPaid ?? null,
+          })
+
+          if (checkoutContext?.isFirstPaid) {
+            track('conversion_free_to_paid', {
+              gameId,
+              currency: checkoutContext.currency,
+              entryFee: checkoutContext.entryFee,
+              total: checkoutContext.total,
+            })
+          }
+        }
+      }
+    } catch {
+      // Ignore analytics storage errors.
+    }
+
     if (checkout === 'success') {
       toast.success('Payment succeeded. Your game entry is being confirmed.')
     } else if (checkout === 'cancelled') {
@@ -113,6 +161,8 @@ function GameDetailPage() {
       toast.error('Rebuy payment failed. Please retry before the deadline.')
     }
 
+    clearCheckoutContext(gameId)
+
     navigate({
       params: { gameId },
       replace: true,
@@ -128,6 +178,19 @@ function GameDetailPage() {
 
     return () => window.clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (!game) {
+      return
+    }
+
+    const entryFeeLabel = (game.entry_fee ?? 0) > 0 ? formatCurrency(game.entry_fee, game.currency) : 'Free'
+    setPageMeta({
+      description: `${game.name} • ${entryFeeLabel} • ${game.player_count} players joined`,
+      title: `${game.name} | Guess to Survive`,
+      url: window.location.href,
+    })
+  }, [game])
 
   if (isLoading) {
     return (
@@ -146,9 +209,9 @@ function GameDetailPage() {
             <CardDescription>{error instanceof Error ? error.message : 'Please try again.'}</CardDescription>
           </CardHeader>
         </Card>
-        <Link to="/games">
-          <Button variant="outline">Back to games</Button>
-        </Link>
+        <Button asChild variant="outline">
+          <Link to="/games">Back to games</Link>
+        </Button>
       </section>
     )
   }
@@ -162,9 +225,9 @@ function GameDetailPage() {
             <CardDescription>This game does not exist or is not publicly accessible.</CardDescription>
           </CardHeader>
         </Card>
-        <Link to="/games">
-          <Button variant="outline">Back to games</Button>
-        </Link>
+        <Button asChild variant="outline">
+          <Link to="/games">Back to games</Link>
+        </Button>
       </section>
     )
   }
@@ -193,6 +256,15 @@ function GameDetailPage() {
   const managedPlayers = game.game_players.filter(
     (player) => player.status !== 'kicked' && player.user_id !== game.manager_id,
   )
+
+  const gameUrl = window.location.href
+  const inviteText = `Join my Guess to Survive game: ${game.name}`
+  const currentUserShareText =
+    currentUserPlayer?.status === 'eliminated'
+      ? `I survived to Round ${currentUserPlayer.eliminated_round ?? '?'} in ${game.name}`
+      : game.status === 'completed' && currentUserPlayer?.status === 'alive'
+        ? `I won ${game.name} on Guess to Survive`
+        : inviteText
 
   const handleJoin = async () => {
     if (!isFreeGame) {
@@ -309,18 +381,20 @@ function GameDetailPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link to="/games">
-            <Button variant="outline">Back to games</Button>
-          </Link>
+          <Button asChild variant="outline">
+            <Link to="/games">Back to games</Link>
+          </Button>
           {user && isPlayer ? (
-            <Link params={{ gameId }} search={{}} to="/games/$gameId/pick">
-              <Button variant="secondary">Make pick</Button>
-            </Link>
+            <Button asChild variant="secondary">
+              <Link params={{ gameId }} search={{}} to="/games/$gameId/pick">
+                Make pick
+              </Link>
+            </Button>
           ) : null}
           {!user ? (
-            <Link to="/auth/login">
-              <Button>Sign in to join</Button>
-            </Link>
+            <Button asChild>
+              <Link to="/auth/login">Sign in to join</Link>
+            </Button>
           ) : null}
           {canJoinFree ? (
             <Button disabled={isJoinActionPending} onClick={handleJoin}>
@@ -337,6 +411,26 @@ function GameDetailPage() {
               {createRebuyCheckout.isPending ? 'Redirecting...' : 'Rebuy now'}
             </Button>
           ) : null}
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <ShareButtons text={currentUserShareText} title={game.name} url={gameUrl} />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <GameInviteShareCard
+            code={game.code}
+            currency={game.currency}
+            entryFee={game.entry_fee}
+            name={game.name}
+            playerCount={game.player_count}
+            status={game.status}
+          />
+          <ResultShareCard
+            eliminatedRound={currentUserPlayer?.eliminated_round ?? null}
+            gameName={game.name}
+            playerStatus={currentUserPlayer?.status ?? 'unknown'}
+            status={game.status}
+          />
         </div>
       </div>
 

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { signIn, signInWithGoogle } from '@/lib/auth'
+import { track } from '@/lib/analytics'
 
 export const Route = createFileRoute('/auth/login')({
   component: LoginPage,
@@ -27,6 +28,7 @@ function LoginPage() {
 
     try {
       await signIn(email, password)
+      track('auth_login', { method: 'email' })
       toast.success('Logged in successfully.')
       navigate({ to: '/' })
     } catch (signInError) {
@@ -43,6 +45,7 @@ function LoginPage() {
     setGoogleLoading(true)
 
     try {
+      track('auth_login_started', { method: 'google' })
       await signInWithGoogle()
       toast.info('Redirecting to Google...')
     } catch (signInError) {
@@ -55,7 +58,7 @@ function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-[70vh] place-items-center p-6">
+    <section aria-label="Log in" className="grid min-h-[70vh] place-items-center p-6">
       <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
         <CardHeader>
           <CardTitle>Log in</CardTitle>
@@ -121,6 +124,6 @@ function LoginPage() {
           </p>
         </CardContent>
       </Card>
-    </main>
+    </section>
   )
 }

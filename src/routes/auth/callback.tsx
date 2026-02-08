@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
+import { track } from '@/lib/analytics'
 import { supabase } from '@/lib/supabase'
 
 export const Route = createFileRoute('/auth/callback')({
@@ -37,6 +38,8 @@ function AuthCallbackPage() {
           if (exchangeError) {
             throw exchangeError
           }
+
+          track('auth_callback_exchange', { hasCode: true })
         } else if (tokenHash && type && SUPPORTED_OTP_TYPES.has(type as EmailOtpType)) {
           const { error: verifyError } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
@@ -45,6 +48,12 @@ function AuthCallbackPage() {
 
           if (verifyError) {
             throw verifyError
+          }
+
+          if (type === 'signup') {
+            track('auth_sign_up_verified', { method: 'email' })
+          } else {
+            track('auth_otp_verified', { type })
           }
         }
 
@@ -70,7 +79,7 @@ function AuthCallbackPage() {
 
   if (error) {
     return (
-      <main className="grid min-h-[70vh] place-items-center p-6">
+      <section aria-label="Authentication error" className="grid min-h-[70vh] place-items-center p-6">
         <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
           <CardHeader>
             <CardTitle>Authentication error</CardTitle>
@@ -84,17 +93,17 @@ function AuthCallbackPage() {
             </p>
           </CardContent>
         </Card>
-      </main>
+      </section>
     )
   }
 
   return (
-    <main className="grid min-h-[70vh] place-items-center p-6">
+    <section aria-label="Finalizing authentication" className="grid min-h-[70vh] place-items-center p-6">
       <Card className="w-full max-w-md border-border bg-card/80 text-card-foreground">
         <CardContent className="space-y-2 pt-6 text-center">
           <LoadingSpinner className="justify-center" label="Finalizing authentication..." />
         </CardContent>
       </Card>
-    </main>
+    </section>
   )
 }

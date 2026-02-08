@@ -2,6 +2,7 @@ import type { Session, User } from '@supabase/supabase-js'
 import { useEffect, useState } from 'react'
 
 import { AuthContext } from '@/contexts/auth-context'
+import { identifyUser, resetAnalytics } from '@/lib/analytics'
 import { supabase } from '@/lib/supabase'
 
 type AuthProviderProps = {
@@ -45,6 +46,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
       subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    if (user?.id) {
+      identifyUser(user.id)
+    } else {
+      resetAnalytics()
+    }
+  }, [user?.id])
 
   const signOut = async () => {
     const { error } = await supabase.auth.signOut()

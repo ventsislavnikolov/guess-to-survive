@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
+.cron_token.tmp
+.tanstack/tmp
+supabase/.temp/
 .env
 .env.*
 !.env.example

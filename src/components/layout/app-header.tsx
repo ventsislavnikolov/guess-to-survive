@@ -39,6 +39,13 @@ export function AppHeader() {
           >
             Games
           </Link>
+          <Link
+            activeProps={{ className: 'bg-accent text-accent-foreground' }}
+            className="rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
+            to="/how-it-works"
+          >
+            How it works
+          </Link>
           {user ? (
             <>
               <Link
@@ -70,16 +77,12 @@ export function AppHeader() {
             </>
           ) : (
             <>
-              <Link to="/auth/login">
-                <Button className="h-9" size="sm" variant="ghost">
-                  Login
-                </Button>
-              </Link>
-              <Link to="/auth/signup">
-                <Button className="h-9" size="sm">
-                  Sign up
-                </Button>
-              </Link>
+              <Button asChild className="h-9" size="sm" variant="ghost">
+                <Link to="/auth/login">Login</Link>
+              </Button>
+              <Button asChild className="h-9" size="sm">
+                <Link to="/auth/signup">Sign up</Link>
+              </Button>
             </>
           )}
           <ThemeToggle />
@@ -115,6 +118,14 @@ export function AppHeader() {
               to="/games"
             >
               Games
+            </Link>
+            <Link
+              activeProps={{ className: 'bg-accent text-accent-foreground' }}
+              className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+              onClick={closeMobile}
+              to="/how-it-works"
+            >
+              How it works
             </Link>
             {user ? (
               <>
@@ -156,18 +167,28 @@ export function AppHeader() {
               </>
             ) : (
               <>
-                <Link className="w-full" onClick={closeMobile} to="/auth/login">
-                  <Button className="w-full justify-start" variant="ghost">
-                    Login
-                  </Button>
-                </Link>
-                <Link className="w-full" onClick={closeMobile} to="/auth/signup">
-                  <Button className="w-full justify-start">Sign up</Button>
-                </Link>
+                <Button asChild className="w-full justify-start" onClick={closeMobile} variant="ghost">
+                  <Link to="/auth/login">Login</Link>
+                </Button>
+                <Button asChild className="w-full justify-start" onClick={closeMobile}>
+                  <Link to="/auth/signup">Sign up</Link>
+                </Button>
               </>
             )}
             <div className="px-1 pt-2">
               <ThemeToggle />
+            </div>
+            <div className="grid gap-1 px-1 pt-1 text-xs text-muted-foreground">
+              <Link className="rounded-md px-3 py-2 hover:bg-accent/70 hover:text-foreground" onClick={closeMobile} to="/terms">
+                Terms
+              </Link>
+              <Link
+                className="rounded-md px-3 py-2 hover:bg-accent/70 hover:text-foreground"
+                onClick={closeMobile}
+                to="/privacy"
+              >
+                Privacy
+              </Link>
             </div>
           </nav>
         </div>
