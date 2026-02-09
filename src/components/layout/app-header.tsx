@@ -3,7 +3,6 @@ import { Bell, Menu, User, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { useUnreadNotificationCount } from "@/hooks/use-notifications";
@@ -49,22 +48,8 @@ export function AppHeader() {
           >
             Games
           </Link>
-          <Link
-            activeProps={{ className: "bg-accent text-accent-foreground" }}
-            className="rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
-            to="/how-it-works"
-          >
-            How it works
-          </Link>
           {user ? (
             <>
-              <Link
-                activeProps={{ className: "bg-accent text-accent-foreground" }}
-                className="rounded-md px-3 py-2 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
-                to="/games/create"
-              >
-                Create game
-              </Link>
               <Link
                 activeProps={{ className: "bg-accent text-accent-foreground" }}
                 aria-label="Notifications"
@@ -105,7 +90,6 @@ export function AppHeader() {
               </Button>
             </>
           )}
-          <ThemeToggle />
         </nav>
 
         <Button
@@ -143,26 +127,8 @@ export function AppHeader() {
             >
               Games
             </Link>
-            <Link
-              activeProps={{ className: "bg-accent text-accent-foreground" }}
-              className="rounded-md px-3 py-2 text-muted-foreground text-sm hover:bg-accent/70 hover:text-foreground"
-              onClick={closeMobile}
-              to="/how-it-works"
-            >
-              How it works
-            </Link>
             {user ? (
               <>
-                <Link
-                  activeProps={{
-                    className: "bg-accent text-accent-foreground",
-                  }}
-                  className="rounded-md px-3 py-2 text-muted-foreground text-sm hover:bg-accent/70 hover:text-foreground"
-                  onClick={closeMobile}
-                  to="/games/create"
-                >
-                  Create game
-                </Link>
                 <Link
                   activeProps={{
                     className: "bg-accent text-accent-foreground",
@@ -224,9 +190,6 @@ export function AppHeader() {
                 </Button>
               </>
             )}
-            <div className="px-1 pt-2">
-              <ThemeToggle />
-            </div>
             <div className="grid gap-1 px-1 pt-1 text-muted-foreground text-xs">
               <Link
                 className="rounded-md px-3 py-2 hover:bg-accent/70 hover:text-foreground"

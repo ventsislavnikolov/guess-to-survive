@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ProfileStatsCard } from "@/components/profile/profile-stats-card";
 import { ProtectedRoute } from "@/components/protected-route";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -417,6 +418,18 @@ function ProfileSettingsPage() {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6">
       <ProfileStatsCard />
+
+      <Card className="border-border bg-card/80 text-card-foreground">
+        <CardHeader>
+          <CardTitle>Appearance</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-muted-foreground text-sm">
+            Choose your preferred theme for this device.
+          </p>
+          <ThemeToggle />
+        </CardContent>
+      </Card>
 
       <Card className="border-border bg-card/80 text-card-foreground">
         <CardHeader>

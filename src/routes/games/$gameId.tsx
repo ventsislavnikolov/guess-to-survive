@@ -1,4 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -99,6 +104,10 @@ function formatTimeRemaining(targetTimestamp: number | null, now: number) {
 }
 
 function GameDetailPage() {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+
   const { gameId } = Route.useParams();
   const navigate = Route.useNavigate();
   const { checkout, rebuy } = Route.useSearch();
@@ -111,8 +120,13 @@ function GameDetailPage() {
   const leaveGame = useLeaveGame();
   const [kickTargetUserId, setKickTargetUserId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const isPickRoute = pathname.endsWith("/pick");
 
   useEffect(() => {
+    if (isPickRoute) {
+      return;
+    }
+
     if (!(checkout || rebuy)) {
       return;
     }
@@ -184,17 +198,25 @@ function GameDetailPage() {
       search: () => ({}),
       to: "/games/$gameId",
     });
-  }, [checkout, gameId, navigate, rebuy]);
+  }, [checkout, gameId, isPickRoute, navigate, rebuy]);
 
   useEffect(() => {
+    if (isPickRoute) {
+      return;
+    }
+
     const interval = window.setInterval(() => {
       setNow(Date.now());
     }, 60_000);
 
     return () => window.clearInterval(interval);
-  }, []);
+  }, [isPickRoute]);
 
   useEffect(() => {
+    if (isPickRoute) {
+      return;
+    }
+
     if (!game) {
       return;
     }
@@ -208,7 +230,11 @@ function GameDetailPage() {
       title: `${game.name} | Guess to Survive`,
       url: window.location.href,
     });
-  }, [game]);
+  }, [game, isPickRoute]);
+
+  if (isPickRoute) {
+    return <Outlet />;
+  }
 
   if (isLoading) {
     return (
