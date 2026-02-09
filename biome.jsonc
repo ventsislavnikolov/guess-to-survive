@@ -1,13 +1,11 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "extends": ["ultracite/biome/core", "ultracite/biome/react"],
-
   "vcs": {
     "enabled": true,
     "clientKind": "git",
-    "useIgnoreFile": true
+    "useIgnoreFile": true,
   },
-
   "files": {
     "ignoreUnknown": true,
     "includes": [
@@ -15,57 +13,63 @@
       "!pnpm-lock.yaml",
       "!!**/dist",
       "!!**/node_modules",
-      "!!supabase/.temp"
-    ]
+      "!!supabase/.temp",
+    ],
   },
-
+  "linter": {
+    "rules": {
+      "correctness": {
+        "noUndeclaredVariables": "off",
+      },
+    },
+  },
   "overrides": [
     {
       "includes": ["supabase/functions/**"],
       "javascript": {
-        "globals": ["Deno"]
+        "globals": ["Deno"],
       },
       "linter": {
         "rules": {
           "complexity": {
-            "noExcessiveCognitiveComplexity": "off"
+            "noExcessiveCognitiveComplexity": "off",
           },
           "suspicious": {
-            "noConsole": "off"
-          }
-        }
-      }
+            "noConsole": "off",
+          },
+        },
+      },
     },
     {
       "includes": ["src/routes/**"],
       "linter": {
         "rules": {
           "complexity": {
-            "noExcessiveCognitiveComplexity": "off"
-          }
-        }
-      }
+            "noExcessiveCognitiveComplexity": "off",
+          },
+        },
+      },
     },
     {
       "includes": [
         "src/routes/**/$*.js",
         "src/routes/**/$*.jsx",
         "src/routes/**/$*.ts",
-        "src/routes/**/$*.tsx"
+        "src/routes/**/$*.tsx",
       ],
       "linter": {
         "rules": {
           "style": {
-            "useFilenamingConvention": "off"
-          }
-        }
-      }
+            "useFilenamingConvention": "off",
+          },
+        },
+      },
     },
     {
       "includes": ["src/routeTree.gen.ts"],
       "assist": { "enabled": false },
       "formatter": { "enabled": false },
-      "linter": { "enabled": false }
-    }
-  ]
+      "linter": { "enabled": false },
+    },
+  ],
 }
