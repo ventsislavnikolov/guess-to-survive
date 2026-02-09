@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Bell, Menu, X } from "lucide-react";
+import { Bell, Menu, User, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -79,10 +79,12 @@ export function AppHeader() {
                 ) : null}
               </Link>
               <Link
-                className="hidden max-w-[220px] truncate rounded-md px-2 py-1 text-muted-foreground text-xs transition hover:bg-accent/60 hover:text-foreground sm:inline"
+                activeProps={{ className: "bg-accent text-accent-foreground" }}
+                aria-label="Profile"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
                 to="/profile"
               >
-                {user.email}
+                <User className="h-4 w-4" />
               </Link>
               <Button
                 className="h-9"
