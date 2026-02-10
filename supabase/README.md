@@ -2,7 +2,7 @@
 
 Active project for this repository:
 
-- Name: `guess-to-survive-codex`
+- Name: `guess-to-survive`
 - Project ref: `jsfsbvkhffyybytasytm`
 - URL: `https://jsfsbvkhffyybytasytm.supabase.co`
 - Region: `eu-west-1`
