@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/ventsislavnikolov/guess-to-survive/compare/v1.0.0...v1.0.1) (2026-02-10)
+
+
+### Bug Fixes
+
+* **games:** update rebuy window and pick submission ([9142787](https://github.com/ventsislavnikolov/guess-to-survive/commit/9142787386b3d2723525b11830fb646ce5bf9725))
+
 # 1.0.0 (2026-02-10)
 
 
