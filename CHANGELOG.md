@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/ventsislavnikolov/guess-to-survive/compare/v1.0.1...v1.1.0) (2026-02-10)
+
+
+### Features
+
+* **ui:** replace native alerts with shadcn dialogs ([0d5883d](https://github.com/ventsislavnikolov/guess-to-survive/commit/0d5883df8d75d5081f9a0a05686dfe24ea3bd256))
+
 ## [1.0.1](https://github.com/ventsislavnikolov/guess-to-survive/compare/v1.0.0...v1.0.1) (2026-02-10)
 
 
