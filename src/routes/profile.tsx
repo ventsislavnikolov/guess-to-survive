@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useAuth } from "@/hooks/use-auth";
+import { useConfirm } from "@/hooks/use-confirm";
 import {
   useCreateConnectAccount,
   usePaymentHistory,
@@ -127,6 +128,7 @@ function ProfileRoute() {
 
 function ProfileSettingsPage() {
   const { signOut, user } = useAuth();
+  const confirm = useConfirm();
   const { data: profile, error, isLoading } = useProfile();
   const createConnectAccount = useCreateConnectAccount();
   const {
@@ -275,10 +277,13 @@ function ProfileSettingsPage() {
       return;
     }
 
-    // biome-ignore lint/suspicious/noAlert: Using native confirm until modal UI is implemented.
-    const confirmed = window.confirm(
-      "Delete your account permanently? This cannot be undone and you will lose access immediately."
-    );
+    const confirmed = await confirm({
+      confirmText: "Delete",
+      description:
+        "Delete your account permanently? This cannot be undone and you will lose access immediately.",
+      title: "Delete account",
+      variant: "destructive",
+    });
 
     if (!confirmed) {
       return;
@@ -353,12 +358,13 @@ function ProfileSettingsPage() {
       Date.now() + days * 24 * 60 * 60 * 1000
     ).toISOString();
 
-    if (
-      // biome-ignore lint/suspicious/noAlert: Using native confirm until modal UI is implemented.
-      !window.confirm(
-        `Enable self-exclusion for ${days} day(s)? You won’t be able to join paid games until it expires.`
-      )
-    ) {
+    const confirmed = await confirm({
+      confirmText: "Enable",
+      description: `Enable self-exclusion for ${days} day(s)? You won’t be able to join paid games until it expires.`,
+      title: "Enable self-exclusion",
+    });
+
+    if (!confirmed) {
       return;
     }
 
@@ -375,8 +381,13 @@ function ProfileSettingsPage() {
   };
 
   const handleClearSelfExclusion = async () => {
-    // biome-ignore lint/suspicious/noAlert: Using native confirm until modal UI is implemented.
-    if (!window.confirm("Clear self-exclusion?")) {
+    const confirmed = await confirm({
+      confirmText: "Clear",
+      description: "Clear self-exclusion?",
+      title: "Clear self-exclusion",
+    });
+
+    if (!confirmed) {
       return;
     }
 

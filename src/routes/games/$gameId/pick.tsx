@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { useConfirm } from "@/hooks/use-confirm";
 import { useGame } from "@/hooks/use-game";
 import { useMakePick, useMyPicks } from "@/hooks/use-picks";
 import { useAvailableTeams } from "@/hooks/use-teams";
@@ -105,6 +106,7 @@ function PickRoute() {
 
 function PickPage() {
   const { gameId } = Route.useParams();
+  const confirm = useConfirm();
   const {
     data: game,
     error: gameError,
@@ -430,12 +432,13 @@ function PickPage() {
                 return;
               }
 
-              if (
-                // biome-ignore lint/suspicious/noAlert: Using native confirm until modal UI is implemented.
-                !window.confirm(
-                  `Confirm ${selectedTeam.name} as your pick for round ${roundLabel}?`
-                )
-              ) {
+              const confirmed = await confirm({
+                confirmText: "Confirm",
+                description: `Confirm ${selectedTeam.name} as your pick for round ${roundLabel}?`,
+                title: "Confirm pick",
+              });
+
+              if (!confirmed) {
                 return;
               }
 

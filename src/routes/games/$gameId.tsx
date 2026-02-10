@@ -20,8 +20,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useAuth } from "@/hooks/use-auth";
+import { useConfirm } from "@/hooks/use-confirm";
 import {
   useCreateCheckout,
   useCreateRebuyCheckout,
@@ -118,7 +129,11 @@ function GameDetailPage() {
   const joinGame = useJoinGame();
   const kickPlayerWithRefund = useKickPlayerWithRefund();
   const leaveGame = useLeaveGame();
+  const confirm = useConfirm();
   const [kickTargetUserId, setKickTargetUserId] = useState<string | null>(null);
+  const [kickDialogOpen, setKickDialogOpen] = useState(false);
+  const [kickReason, setKickReason] = useState("rule violation");
+  const [kickReasonError, setKickReasonError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const isPickRoute = pathname.endsWith("/pick");
 
@@ -375,8 +390,11 @@ function GameDetailPage() {
     }
 
     if (
-      // biome-ignore lint/suspicious/noAlert: Using native confirm until modal UI is implemented.
-      !window.confirm("Join this free game?")
+      !(await confirm({
+        confirmText: "Join",
+        description: "Join this free game?",
+        title: "Join game",
+      }))
     ) {
       return;
     }
@@ -397,8 +415,11 @@ function GameDetailPage() {
     }
 
     if (
-      // biome-ignore lint/suspicious/noAlert: Using native confirm until modal UI is implemented.
-      !window.confirm("Proceed to Stripe checkout to rebuy into this game?")
+      !(await confirm({
+        confirmText: "Proceed",
+        description: "Proceed to Stripe checkout to rebuy into this game?",
+        title: "Rebuy",
+      }))
     ) {
       return;
     }
@@ -422,8 +443,11 @@ function GameDetailPage() {
 
   const handleLeave = async () => {
     if (
-      // biome-ignore lint/suspicious/noAlert: Using native confirm until modal UI is implemented.
-      !window.confirm("Leave this game?")
+      !(await confirm({
+        confirmText: "Leave",
+        description: "Leave this game?",
+        title: "Leave game",
+      }))
     ) {
       return;
     }
@@ -440,40 +464,49 @@ function GameDetailPage() {
     }
   };
 
-  const handleKickPlayer = async (targetUserId: string) => {
+  const openKickDialog = (targetUserId: string) => {
     if (!canManagePlayers) {
       return;
     }
 
-    const reasonInput =
-      // biome-ignore lint/suspicious/noAlert: Using native prompt until modal UI is implemented.
-      window.prompt(
-        "Enter reason for kicking this player (required):",
-        "rule violation"
-      );
-    if (reasonInput === null) {
-      return;
-    }
-
-    const reason = reasonInput.trim();
-    if (!reason) {
-      toast.error("A kick reason is required.");
-      return;
-    }
-
-    if (
-      // biome-ignore lint/suspicious/noAlert: Using native confirm until modal UI is implemented.
-      !window.confirm("Kick this player and start refund processing?")
-    ) {
-      return;
-    }
-
     setKickTargetUserId(targetUserId);
+    setKickReason("rule violation");
+    setKickReasonError(null);
+    setKickDialogOpen(true);
+  };
+
+  const handleKickDialogOpenChange = (nextOpen: boolean) => {
+    if (kickPlayerWithRefund.isPending) {
+      return;
+    }
+
+    setKickDialogOpen(nextOpen);
+
+    if (!nextOpen) {
+      setKickReasonError(null);
+      setKickTargetUserId(null);
+    }
+  };
+
+  const handleKickConfirm = async () => {
+    if (!kickTargetUserId) {
+      return;
+    }
+
+    const reason = kickReason.trim();
+
+    if (!reason) {
+      setKickReasonError("A kick reason is required.");
+      return;
+    }
+
+    setKickReasonError(null);
+
     try {
       const result = await kickPlayerWithRefund.mutateAsync({
         gameId,
         reason,
-        userId: targetUserId,
+        userId: kickTargetUserId,
       });
 
       if (result.processed === 0) {
@@ -481,14 +514,15 @@ function GameDetailPage() {
       } else {
         toast.success("Player kicked and refund processing started.");
       }
+
+      setKickDialogOpen(false);
+      setKickTargetUserId(null);
     } catch (kickError) {
       toast.error(
         kickError instanceof Error
           ? kickError.message
           : "Unable to kick player."
       );
-    } finally {
-      setKickTargetUserId(null);
     }
   };
 
@@ -693,7 +727,7 @@ function GameDetailPage() {
                   </p>
                   <Button
                     disabled={kickPlayerWithRefund.isPending}
-                    onClick={() => handleKickPlayer(player.user_id)}
+                    onClick={() => openKickDialog(player.user_id)}
                     size="sm"
                     variant="destructive"
                   >
@@ -708,6 +742,59 @@ function GameDetailPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Dialog onOpenChange={handleKickDialogOpenChange} open={kickDialogOpen}>
+        <DialogContent showCloseButton={!kickPlayerWithRefund.isPending}>
+          <DialogHeader>
+            <DialogTitle>Kick player</DialogTitle>
+            <DialogDescription>
+              Enter a reason for kicking this player. Refund processing will
+              start automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-2">
+            <Label htmlFor="kick-reason">Reason</Label>
+            <Input
+              disabled={kickPlayerWithRefund.isPending}
+              id="kick-reason"
+              onChange={(event) => {
+                const value = event.target.value;
+                setKickReason(value);
+
+                if (kickReasonError && value.trim()) {
+                  setKickReasonError(null);
+                }
+              }}
+              value={kickReason}
+            />
+            {kickReasonError ? (
+              <p className="text-destructive text-sm">{kickReasonError}</p>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button
+              disabled={kickPlayerWithRefund.isPending}
+              onClick={() => handleKickDialogOpenChange(false)}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={kickPlayerWithRefund.isPending}
+              onClick={handleKickConfirm}
+              type="button"
+              variant="destructive"
+            >
+              {kickPlayerWithRefund.isPending
+                ? "Processing..."
+                : "Kick + refund"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card className="border-border bg-card/70">
         <CardHeader>

@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/contexts/auth-provider";
+import { ConfirmDialogProvider } from "@/contexts/confirm-dialog-provider";
 import { initAnalytics } from "@/lib/analytics";
 import { queryClient } from "@/lib/query-client";
 import { routeTree } from "./routeTree.gen";
@@ -37,7 +38,9 @@ createRoot(rootElement).render(
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <RouterProvider router={router} />
+          <ConfirmDialogProvider>
+            <RouterProvider router={router} />
+          </ConfirmDialogProvider>
         </AuthProvider>
         {import.meta.env.DEV && ReactQueryDevtools ? (
           <Suspense fallback={null}>
