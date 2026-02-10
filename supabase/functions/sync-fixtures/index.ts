@@ -106,7 +106,6 @@ serve(async (request) => {
       throw clearFixturesError;
     }
 
-
     const { data: teams, error: teamsError } = await supabase
       .from("teams")
       .select("id, external_id")

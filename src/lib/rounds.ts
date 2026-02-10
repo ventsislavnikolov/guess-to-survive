@@ -32,7 +32,10 @@ export function normalizeStartingRound({
     throw new Error("No upcoming rounds available.");
   }
 
-  if (requestedRound && upcomingRounds?.some((r) => r.round === requestedRound)) {
+  if (
+    requestedRound &&
+    upcomingRounds?.some((round) => round.round === requestedRound)
+  ) {
     return { startingRound: requestedRound, wasBumped: false };
   }
 

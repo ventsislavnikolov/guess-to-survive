@@ -14,7 +14,7 @@ jest.mock("stripe", () =>
     coupons: {
       list: jest.fn(),
     },
-  })),
+  }))
 );
 
 jest.mock("next/cache", () => ({

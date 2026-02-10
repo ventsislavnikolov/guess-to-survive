@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { ProtectedRoute } from "@/components/protected-route";
@@ -15,7 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateGame } from "@/hooks/use-games";
 import { useUpcomingRounds } from "@/hooks/use-rounds";
-import { getAvailabilityAt, getFirstAvailableRound, normalizeStartingRound } from "@/lib/rounds";
+import {
+  getAvailabilityAt,
+  getFirstAvailableRound,
+  normalizeStartingRound,
+} from "@/lib/rounds";
 
 interface CreateGameFormState {
   currency: "EUR" | "GBP" | "USD";
@@ -68,7 +72,9 @@ function parseCreateGameValues(
   const maxPlayers =
     form.maxPlayers.trim().length > 0 ? Number(form.maxPlayers) : null;
   const startingRound =
-    form.startingRound.trim().length > 0 ? Number(form.startingRound) : NaN;
+    form.startingRound.trim().length > 0
+      ? Number(form.startingRound)
+      : Number.NaN;
   const rebuyDeadline =
     form.rebuyDeadline.trim().length > 0 ? form.rebuyDeadline : null;
 
@@ -184,7 +190,7 @@ function CreateGamePage() {
 
       return { ...previous, startingRound: String(firstAvailableRound.round) };
     });
-  }, [firstAvailableRound?.round, upcomingRounds.data]);
+  }, [firstAvailableRound, upcomingRounds.data]);
 
   const updateField = <K extends keyof CreateGameFormState>(
     key: K,
@@ -216,11 +222,13 @@ function CreateGamePage() {
     }
 
     let normalizedStartingRound = parsed.startingRound;
+
     try {
       const normalized = normalizeStartingRound({
         requestedRound: parsed.startingRound,
         upcomingRounds: upcomingRounds.data,
       });
+
       normalizedStartingRound = normalized.startingRound;
 
       if (normalized.wasBumped) {
@@ -276,6 +284,85 @@ function CreateGamePage() {
     }
   };
 
+  const startingRoundControl: ReactNode = (() => {
+    if (upcomingRounds.isLoading) {
+      return (
+        <select
+          className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+          disabled
+          id="starting-round"
+          value=""
+        >
+          <option value="">Loading upcoming rounds...</option>
+        </select>
+      );
+    }
+
+    if (upcomingRounds.isError) {
+      return (
+        <Input
+          id="starting-round"
+          max="38"
+          min="1"
+          onChange={(event) => updateField("startingRound", event.target.value)}
+          type="number"
+          value={form.startingRound}
+        />
+      );
+    }
+
+    if ((upcomingRounds.data?.length ?? 0) === 0) {
+      return (
+        <Input
+          disabled
+          id="starting-round"
+          placeholder="No upcoming rounds available"
+          type="text"
+          value=""
+        />
+      );
+    }
+
+    return (
+      <select
+        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+        id="starting-round"
+        onChange={(event) => updateField("startingRound", event.target.value)}
+        value={form.startingRound}
+      >
+        {(upcomingRounds.data ?? []).map((round) => (
+          <option key={round.round} value={String(round.round)}>
+            Round {round.round} (locks {formatLockTime(round.lock_time)})
+          </option>
+        ))}
+      </select>
+    );
+  })();
+
+  const startingRoundNote: ReactNode = (() => {
+    if (startingRoundHint) {
+      return (
+        <p className="text-muted-foreground text-xs">{startingRoundHint}</p>
+      );
+    }
+
+    if (upcomingRounds.isLoading) {
+      return (
+        <p className="text-muted-foreground text-xs">Loading schedule...</p>
+      );
+    }
+
+    if ((upcomingRounds.data?.length ?? 0) === 0) {
+      return (
+        <p className="text-muted-foreground text-xs">
+          No upcoming rounds available (schedule not synced / season ended).
+        </p>
+      );
+    }
+
+    return null;
+  })();
+
   return (
     <section className="mx-auto w-full max-w-4xl p-4 sm:p-6">
       <Card className="border-border bg-card/80 text-card-foreground">
@@ -322,7 +409,9 @@ function CreateGamePage() {
               <Input
                 id="entry-fee"
                 min="0"
-                onChange={(event) => updateField("entryFee", event.target.value)}
+                onChange={(event) =>
+                  updateField("entryFee", event.target.value)
+                }
                 step="0.01"
                 type="number"
                 value={form.entryFee}
@@ -353,7 +442,9 @@ function CreateGamePage() {
               <Input
                 id="min-players"
                 min="2"
-                onChange={(event) => updateField("minPlayers", event.target.value)}
+                onChange={(event) =>
+                  updateField("minPlayers", event.target.value)
+                }
                 type="number"
                 value={form.minPlayers}
               />
@@ -364,7 +455,9 @@ function CreateGamePage() {
               <Input
                 id="max-players"
                 min="2"
-                onChange={(event) => updateField("maxPlayers", event.target.value)}
+                onChange={(event) =>
+                  updateField("maxPlayers", event.target.value)
+                }
                 placeholder="Optional"
                 type="number"
                 value={form.maxPlayers}
@@ -373,63 +466,8 @@ function CreateGamePage() {
 
             <div className="space-y-2">
               <Label htmlFor="starting-round">Starting round</Label>
-
-              {upcomingRounds.isLoading ? (
-                <select
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  disabled
-                  id="starting-round"
-                  value=""
-                >
-                  <option value="">Loading upcoming rounds...</option>
-                </select>
-              ) : upcomingRounds.isError ? (
-                <Input
-                  id="starting-round"
-                  max="38"
-                  min="1"
-                  onChange={(event) =>
-                    updateField("startingRound", event.target.value)
-                  }
-                  type="number"
-                  value={form.startingRound}
-                />
-              ) : (upcomingRounds.data?.length ?? 0) === 0 ? (
-                <Input
-                  disabled
-                  id="starting-round"
-                  placeholder="No upcoming rounds available"
-                  type="text"
-                  value=""
-                />
-              ) : (
-                <select
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  id="starting-round"
-                  onChange={(event) =>
-                    updateField("startingRound", event.target.value)
-                  }
-                  value={form.startingRound}
-                >
-                  {(upcomingRounds.data ?? []).map((round) => (
-                    <option key={round.round} value={String(round.round)}>
-                      Round {round.round} (locks {formatLockTime(round.lock_time)})
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {startingRoundHint ? (
-                <p className="text-muted-foreground text-xs">{startingRoundHint}</p>
-              ) : upcomingRounds.isLoading ? (
-                <p className="text-muted-foreground text-xs">
-                  Loading schedule...
-                </p>
-              ) : (upcomingRounds.data?.length ?? 0) === 0 ? (
-                <p className="text-muted-foreground text-xs">
-                  No upcoming rounds available (schedule not synced / season ended).
-                </p>
-              ) : null}
+              {startingRoundControl}
+              {startingRoundNote}
             </div>
 
             <div className="space-y-2">
