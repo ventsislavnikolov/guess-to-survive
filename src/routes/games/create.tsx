@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -28,7 +28,7 @@ interface CreateGameFormState {
   minPlayers: string;
   name: string;
   pickVisibility: "hidden" | "visible";
-  rebuyDeadline: string;
+  rebuyWindowDays: string;
   startingRound: string;
   visibility: "private" | "public";
   wipeoutMode: "rebuy" | "split";
@@ -41,7 +41,7 @@ interface ParsedCreateGameValues {
   minPlayers: number;
   name: string;
   pickVisibility: "hidden" | "visible";
-  rebuyDeadline: string | null;
+  rebuyWindowDays: number;
   startingRound: number;
   visibility: "private" | "public";
   wipeoutMode: "rebuy" | "split";
@@ -54,7 +54,7 @@ const initialFormState: CreateGameFormState = {
   minPlayers: "2",
   name: "",
   pickVisibility: "hidden",
-  rebuyDeadline: "",
+  rebuyWindowDays: "2",
   startingRound: "",
   visibility: "public",
   wipeoutMode: "split",
@@ -75,14 +75,16 @@ function parseCreateGameValues(
     form.startingRound.trim().length > 0
       ? Number(form.startingRound)
       : Number.NaN;
-  const rebuyDeadline =
-    form.rebuyDeadline.trim().length > 0 ? form.rebuyDeadline : null;
+  const rebuyWindowDaysRaw = form.rebuyWindowDays.trim();
+  const rebuyWindowDays =
+    rebuyWindowDaysRaw.length > 0 ? Number(rebuyWindowDaysRaw) : 2;
 
   if (
     Number.isNaN(entryFee) ||
     Number.isNaN(minPlayers) ||
     (maxPlayers !== null && Number.isNaN(maxPlayers)) ||
-    Number.isNaN(startingRound)
+    Number.isNaN(startingRound) ||
+    Number.isNaN(rebuyWindowDays)
   ) {
     return null;
   }
@@ -94,7 +96,7 @@ function parseCreateGameValues(
     minPlayers,
     name: form.name.trim(),
     pickVisibility: form.pickVisibility,
-    rebuyDeadline: rebuyDeadline ? new Date(rebuyDeadline).toISOString() : null,
+    rebuyWindowDays,
     startingRound,
     visibility: form.visibility,
     wipeoutMode: form.wipeoutMode,
@@ -130,8 +132,18 @@ function getValidationError(values: ParsedCreateGameValues): string | null {
     return "Starting round must be between 1 and 38.";
   }
 
-  if (values.wipeoutMode === "rebuy" && !values.rebuyDeadline) {
-    return "Rebuy mode requires a rebuy deadline.";
+  if (
+    values.wipeoutMode === "rebuy" &&
+    !Number.isInteger(values.rebuyWindowDays)
+  ) {
+    return "Rebuy window must be a whole number of days.";
+  }
+
+  if (
+    values.wipeoutMode === "rebuy" &&
+    (values.rebuyWindowDays < 1 || values.rebuyWindowDays > 14)
+  ) {
+    return "Rebuy window must be between 1 and 14 days.";
   }
 
   return null;
@@ -146,6 +158,7 @@ function CreateGameRoute() {
 }
 
 function CreateGamePage() {
+  const navigate = useNavigate();
   const createGame = useCreateGame();
   const upcomingRounds = useUpcomingRounds();
   const firstAvailableRound = getFirstAvailableRound(upcomingRounds.data);
@@ -253,17 +266,15 @@ function CreateGamePage() {
         min_players: parsed.minPlayers,
         name: parsed.name,
         pick_visibility: parsed.pickVisibility,
-        rebuy_deadline: parsed.rebuyDeadline,
+        rebuy_window_days:
+          parsed.wipeoutMode === "rebuy" ? parsed.rebuyWindowDays : 2,
         starting_round: normalizedStartingRound,
         visibility: parsed.visibility,
         wipeout_mode: parsed.wipeoutMode,
       });
 
       toast.success(`Game created. Invite code: ${game.code ?? "N/A"}`);
-      setForm((previous) => ({
-        ...initialFormState,
-        startingRound: previous.startingRound,
-      }));
+      navigate({ to: "/games/$gameId", params: { gameId: game.id } });
     } catch (createError) {
       const message =
         createError instanceof Error
@@ -506,17 +517,26 @@ function CreateGamePage() {
               </select>
             </div>
 
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="rebuy-deadline">Rebuy deadline</Label>
-              <Input
-                id="rebuy-deadline"
-                onChange={(event) =>
-                  updateField("rebuyDeadline", event.target.value)
-                }
-                type="datetime-local"
-                value={form.rebuyDeadline}
-              />
-            </div>
+            {form.wipeoutMode === "rebuy" ? (
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="rebuy-window-days">Rebuy window (days)</Label>
+                <Input
+                  id="rebuy-window-days"
+                  max="14"
+                  min="1"
+                  onChange={(event) =>
+                    updateField("rebuyWindowDays", event.target.value)
+                  }
+                  step="1"
+                  type="number"
+                  value={form.rebuyWindowDays}
+                />
+                <p className="text-muted-foreground text-xs">
+                  This window starts when a wipeout is processed (it's not a
+                  fixed calendar date).
+                </p>
+              </div>
+            ) : null}
 
             <div className="flex items-center justify-end gap-2 md:col-span-2">
               <Button disabled={!canCreate} type="submit">

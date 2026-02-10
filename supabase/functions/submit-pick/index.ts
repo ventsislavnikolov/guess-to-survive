@@ -90,6 +90,55 @@ serve(async (request) => {
 
     const supabase = createAdminClient();
 
+    const { data: game, error: gameError } = await supabase
+      .from("games")
+      .select("current_round, starting_round, status")
+      .eq("id", gameId)
+      .maybeSingle();
+
+    if (gameError) {
+      throw gameError;
+    }
+
+    if (!game) {
+      return new Response(JSON.stringify({ error: "Game not found" }), {
+        headers: CORS_HEADERS,
+        status: 404,
+      });
+    }
+
+    if (!["pending", "active"].includes(game.status)) {
+      throw new Error("Game is not open for picks.");
+    }
+
+    const playableRound = game.current_round ?? game.starting_round;
+    if (!playableRound) {
+      throw new Error("Unable to determine current game round.");
+    }
+
+    if (round !== playableRound) {
+      throw new Error(`Invalid round. Current round is ${playableRound}.`);
+    }
+
+    const { data: player, error: playerError } = await supabase
+      .from("game_players")
+      .select("status")
+      .eq("game_id", gameId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (playerError) {
+      throw playerError;
+    }
+
+    if (!player) {
+      throw new Error("You are not part of this game.");
+    }
+
+    if (player.status !== "alive") {
+      throw new Error("Only alive players can submit picks.");
+    }
+
     const { data: firstFixture, error: firstFixtureError } = await supabase
       .from("fixtures")
       .select("kickoff_time")
@@ -110,6 +159,22 @@ serve(async (request) => {
       throw new Error("Round is locked. Picks can no longer be changed.");
     }
 
+    const { data: teamFixture, error: teamFixtureError } = await supabase
+      .from("fixtures")
+      .select("id")
+      .eq("round", round)
+      .or(`home_team_id.eq.${teamId},away_team_id.eq.${teamId}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (teamFixtureError) {
+      throw teamFixtureError;
+    }
+
+    if (!teamFixture) {
+      throw new Error("Selected team does not play in this round.");
+    }
+
     const { data: existingPick, error: existingError } = await supabase
       .from("picks")
       .select("id, team_id")
@@ -126,6 +191,24 @@ serve(async (request) => {
       return new Response(JSON.stringify({ action: "noop" }), {
         headers: CORS_HEADERS,
       });
+    }
+
+    const { data: usedPick, error: usedPickError } = await supabase
+      .from("picks")
+      .select("id")
+      .eq("game_id", gameId)
+      .eq("user_id", userId)
+      .eq("team_id", teamId)
+      .neq("round", round)
+      .limit(1)
+      .maybeSingle();
+
+    if (usedPickError) {
+      throw usedPickError;
+    }
+
+    if (usedPick) {
+      throw new Error("You have already used that team in this game.");
     }
 
     let action: "created" | "updated";

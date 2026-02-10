@@ -31,7 +31,10 @@ interface PayoutTriggerResult {
   triggered: boolean;
 }
 
-const REBUY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_REBUY_WINDOW_DAYS = 2;
+const MIN_REBUY_WINDOW_DAYS = 1;
+const MAX_REBUY_WINDOW_DAYS = 14;
 
 function toPositiveInteger(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -196,7 +199,7 @@ serve(async (request) => {
     const { data: game, error: gameError } = await supabase
       .from("games")
       .select(
-        "current_round, entry_fee, id, manager_id, starting_round, wipeout_mode"
+        "current_round, entry_fee, id, manager_id, rebuy_window_days, starting_round, wipeout_mode"
       )
       .eq("id", gameId)
       .maybeSingle();
@@ -401,8 +404,16 @@ serve(async (request) => {
       game.wipeout_mode === "rebuy" && (game.entry_fee ?? 0) > 0;
     const rebuyWindowOpened =
       wipeoutDetected && rebuyEnabled && !hasVoidedFixtures;
+
+    const windowDays = Math.max(
+      MIN_REBUY_WINDOW_DAYS,
+      Math.min(
+        MAX_REBUY_WINDOW_DAYS,
+        Math.floor(game.rebuy_window_days ?? DEFAULT_REBUY_WINDOW_DAYS)
+      )
+    );
     const rebuyDeadline = rebuyWindowOpened
-      ? new Date(Date.now() + REBUY_WINDOW_MS).toISOString()
+      ? new Date(Date.now() + windowDays * DAY_MS).toISOString()
       : null;
     let nextStatus: "active" | "completed";
     if (hasVoidedFixtures) {
@@ -494,7 +505,7 @@ serve(async (request) => {
     if (wipeoutDetected) {
       let wipeoutMessage: string;
       if (rebuyWindowOpened) {
-        wipeoutMessage = `Total wipeout detected in round ${targetRound}. Rebuy window is open for 24 hours.`;
+        wipeoutMessage = `Total wipeout detected in round ${targetRound}. Rebuy window is open for ${windowDays} day${windowDays === 1 ? "" : "s"}.`;
       } else if (game.wipeout_mode === "rebuy") {
         wipeoutMessage = `Total wipeout detected in round ${targetRound}. Rebuy is unavailable, game marked completed.`;
       } else {

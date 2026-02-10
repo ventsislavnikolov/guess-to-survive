@@ -147,6 +147,7 @@ export interface Database {
           pick_visibility: string;
           prize_pool: number | null;
           rebuy_deadline: string | null;
+          rebuy_window_days: number;
           starting_round: number;
           status: string;
           updated_at: string;
@@ -167,6 +168,7 @@ export interface Database {
           pick_visibility?: string;
           prize_pool?: number | null;
           rebuy_deadline?: string | null;
+          rebuy_window_days?: number;
           starting_round: number;
           status?: string;
           updated_at?: string;
@@ -187,6 +189,7 @@ export interface Database {
           pick_visibility?: string;
           prize_pool?: number | null;
           rebuy_deadline?: string | null;
+          rebuy_window_days?: number;
           starting_round?: number;
           status?: string;
           updated_at?: string;

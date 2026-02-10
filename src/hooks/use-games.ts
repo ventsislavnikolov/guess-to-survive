@@ -21,7 +21,7 @@ export type CreateGameInput = Pick<
   | "min_players"
   | "name"
   | "pick_visibility"
-  | "rebuy_deadline"
+  | "rebuy_window_days"
   | "starting_round"
   | "visibility"
   | "wipeout_mode"
@@ -103,7 +103,9 @@ async function fetchPublicGames({
 
   const total = data?.at(0)?.total_count ?? 0;
   const pageCount = total > 0 ? Math.ceil(total / pageSize) : 1;
-  const games = (data ?? []) as (GameRow & { player_count?: number })[];
+  const games = (data ?? []) as unknown as (GameRow & {
+    player_count?: number;
+  })[];
 
   return {
     games,
