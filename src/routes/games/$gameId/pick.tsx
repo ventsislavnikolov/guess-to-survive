@@ -469,7 +469,7 @@ function PickPage() {
 
       {isRoundLocked ? (
         <Card className="border-amber-400/60 bg-amber-500/5">
-          <CardContent className="pt-6 text-sm">
+          <CardContent className="text-sm">
             Round lock is active. Picks cannot be submitted or changed after
             first kickoff.
           </CardContent>

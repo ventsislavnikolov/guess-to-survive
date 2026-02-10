@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { ProtectedRoute } from "@/components/protected-route";
@@ -14,6 +14,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateGame } from "@/hooks/use-games";
+import { useUpcomingRounds } from "@/hooks/use-rounds";
+import { getAvailabilityAt, getFirstAvailableRound, normalizeStartingRound } from "@/lib/rounds";
 
 interface CreateGameFormState {
   currency: "EUR" | "GBP" | "USD";
@@ -49,7 +51,7 @@ const initialFormState: CreateGameFormState = {
   name: "",
   pickVisibility: "hidden",
   rebuyDeadline: "",
-  startingRound: "1",
+  startingRound: "",
   visibility: "public",
   wipeoutMode: "split",
 };
@@ -65,7 +67,8 @@ function parseCreateGameValues(
   const minPlayers = Number(form.minPlayers);
   const maxPlayers =
     form.maxPlayers.trim().length > 0 ? Number(form.maxPlayers) : null;
-  const startingRound = Number(form.startingRound);
+  const startingRound =
+    form.startingRound.trim().length > 0 ? Number(form.startingRound) : NaN;
   const rebuyDeadline =
     form.rebuyDeadline.trim().length > 0 ? form.rebuyDeadline : null;
 
@@ -138,7 +141,50 @@ function CreateGameRoute() {
 
 function CreateGamePage() {
   const createGame = useCreateGame();
+  const upcomingRounds = useUpcomingRounds();
+  const firstAvailableRound = getFirstAvailableRound(upcomingRounds.data);
+
   const [form, setForm] = useState<CreateGameFormState>(initialFormState);
+
+  const canCreate = Boolean(firstAvailableRound) && !createGame.isPending;
+
+  const startingRoundHint = useMemo(() => {
+    if (!firstAvailableRound) {
+      return null;
+    }
+
+    const lockTime = getAvailabilityAt(firstAvailableRound);
+    if (!lockTime) {
+      return `First available round is ${firstAvailableRound.round}.`;
+    }
+
+    const formatted = new Intl.DateTimeFormat("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(lockTime);
+
+    return `First available: Round ${firstAvailableRound.round} (locks ${formatted}).`;
+  }, [firstAvailableRound]);
+
+  useEffect(() => {
+    if (!firstAvailableRound) {
+      return;
+    }
+
+    setForm((previous) => {
+      const current = previous.startingRound.trim();
+      const currentNumber = current.length > 0 ? Number(current) : null;
+      const isValidSelection =
+        currentNumber !== null &&
+        upcomingRounds.data?.some((round) => round.round === currentNumber);
+
+      if (isValidSelection) {
+        return previous;
+      }
+
+      return { ...previous, startingRound: String(firstAvailableRound.round) };
+    });
+  }, [firstAvailableRound?.round, upcomingRounds.data]);
 
   const updateField = <K extends keyof CreateGameFormState>(
     key: K,
@@ -149,6 +195,13 @@ function CreateGamePage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (!firstAvailableRound) {
+      toast.error(
+        "No upcoming rounds available. Schedule may not be synced or the season may be over."
+      );
+      return;
+    }
 
     const parsed = parseCreateGameValues(form);
     if (!parsed) {
@@ -162,6 +215,28 @@ function CreateGamePage() {
       return;
     }
 
+    let normalizedStartingRound = parsed.startingRound;
+    try {
+      const normalized = normalizeStartingRound({
+        requestedRound: parsed.startingRound,
+        upcomingRounds: upcomingRounds.data,
+      });
+      normalizedStartingRound = normalized.startingRound;
+
+      if (normalized.wasBumped) {
+        toast.info(
+          `Starting round adjusted to Round ${normalizedStartingRound} (first available).`
+        );
+      }
+    } catch (normalizationError) {
+      toast.error(
+        normalizationError instanceof Error
+          ? normalizationError.message
+          : "No upcoming rounds available."
+      );
+      return;
+    }
+
     try {
       const game = await createGame.mutateAsync({
         currency: parsed.currency,
@@ -171,19 +246,33 @@ function CreateGamePage() {
         name: parsed.name,
         pick_visibility: parsed.pickVisibility,
         rebuy_deadline: parsed.rebuyDeadline,
-        starting_round: parsed.startingRound,
+        starting_round: normalizedStartingRound,
         visibility: parsed.visibility,
         wipeout_mode: parsed.wipeoutMode,
       });
 
       toast.success(`Game created. Invite code: ${game.code ?? "N/A"}`);
-      setForm(initialFormState);
+      setForm((previous) => ({
+        ...initialFormState,
+        startingRound: previous.startingRound,
+      }));
     } catch (createError) {
       const message =
         createError instanceof Error
           ? createError.message
           : "Failed to create game.";
       toast.error(message);
+    }
+  };
+
+  const formatLockTime = (value: string) => {
+    try {
+      return new Intl.DateTimeFormat("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(value));
+    } catch {
+      return value;
     }
   };
 
@@ -233,9 +322,7 @@ function CreateGamePage() {
               <Input
                 id="entry-fee"
                 min="0"
-                onChange={(event) =>
-                  updateField("entryFee", event.target.value)
-                }
+                onChange={(event) => updateField("entryFee", event.target.value)}
                 step="0.01"
                 type="number"
                 value={form.entryFee}
@@ -266,9 +353,7 @@ function CreateGamePage() {
               <Input
                 id="min-players"
                 min="2"
-                onChange={(event) =>
-                  updateField("minPlayers", event.target.value)
-                }
+                onChange={(event) => updateField("minPlayers", event.target.value)}
                 type="number"
                 value={form.minPlayers}
               />
@@ -279,9 +364,7 @@ function CreateGamePage() {
               <Input
                 id="max-players"
                 min="2"
-                onChange={(event) =>
-                  updateField("maxPlayers", event.target.value)
-                }
+                onChange={(event) => updateField("maxPlayers", event.target.value)}
                 placeholder="Optional"
                 type="number"
                 value={form.maxPlayers}
@@ -290,16 +373,63 @@ function CreateGamePage() {
 
             <div className="space-y-2">
               <Label htmlFor="starting-round">Starting round</Label>
-              <Input
-                id="starting-round"
-                max="38"
-                min="1"
-                onChange={(event) =>
-                  updateField("startingRound", event.target.value)
-                }
-                type="number"
-                value={form.startingRound}
-              />
+
+              {upcomingRounds.isLoading ? (
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  disabled
+                  id="starting-round"
+                  value=""
+                >
+                  <option value="">Loading upcoming rounds...</option>
+                </select>
+              ) : upcomingRounds.isError ? (
+                <Input
+                  id="starting-round"
+                  max="38"
+                  min="1"
+                  onChange={(event) =>
+                    updateField("startingRound", event.target.value)
+                  }
+                  type="number"
+                  value={form.startingRound}
+                />
+              ) : (upcomingRounds.data?.length ?? 0) === 0 ? (
+                <Input
+                  disabled
+                  id="starting-round"
+                  placeholder="No upcoming rounds available"
+                  type="text"
+                  value=""
+                />
+              ) : (
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  id="starting-round"
+                  onChange={(event) =>
+                    updateField("startingRound", event.target.value)
+                  }
+                  value={form.startingRound}
+                >
+                  {(upcomingRounds.data ?? []).map((round) => (
+                    <option key={round.round} value={String(round.round)}>
+                      Round {round.round} (locks {formatLockTime(round.lock_time)})
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {startingRoundHint ? (
+                <p className="text-muted-foreground text-xs">{startingRoundHint}</p>
+              ) : upcomingRounds.isLoading ? (
+                <p className="text-muted-foreground text-xs">
+                  Loading schedule...
+                </p>
+              ) : (upcomingRounds.data?.length ?? 0) === 0 ? (
+                <p className="text-muted-foreground text-xs">
+                  No upcoming rounds available (schedule not synced / season ended).
+                </p>
+              ) : null}
             </div>
 
             <div className="space-y-2">
@@ -351,7 +481,7 @@ function CreateGamePage() {
             </div>
 
             <div className="flex items-center justify-end gap-2 md:col-span-2">
-              <Button disabled={createGame.isPending} type="submit">
+              <Button disabled={!canCreate} type="submit">
                 {createGame.isPending ? "Creating..." : "Create game"}
               </Button>
             </div>
