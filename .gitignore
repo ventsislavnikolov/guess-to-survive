@@ -28,3 +28,6 @@ supabase/.temp/
 *.njsproj
 *.sln
 *.sw?
+
+# TypeScript build artifacts
+tsconfig.tsbuildinfo

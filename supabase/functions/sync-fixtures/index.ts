@@ -95,6 +95,17 @@ serve(async (request) => {
 
     const leagueId = league.id;
 
+    // Keep fixtures table scoped to the current season to avoid matchday/round collisions
+    // across seasons (round resets to 1 each year).
+    const { error: clearFixturesError } = await supabase
+      .from("fixtures")
+      .delete()
+      .eq("league_id", leagueId);
+
+    if (clearFixturesError) {
+      throw clearFixturesError;
+    }
+
     const { data: teams, error: teamsError } = await supabase
       .from("teams")
       .select("id, external_id")

@@ -655,6 +655,21 @@ export interface Database {
           wipeout_mode: string;
         }[];
       };
+      first_available_round: {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
+      };
+      list_upcoming_rounds: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          lock_time: string;
+          round: number;
+        }[];
+      };
+      current_pl_season_segment: {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
+      };
     };
     Enums: {
       [_ in never]: never;
