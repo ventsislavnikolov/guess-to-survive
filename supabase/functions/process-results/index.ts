@@ -60,6 +60,11 @@ async function assertAdmin(request: Request) {
     throw new Error("Missing bearer token");
   }
 
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (serviceRoleKey && token === serviceRoleKey) {
+    return;
+  }
+
   const supabase = createAdminClient();
   const {
     data: { user },
