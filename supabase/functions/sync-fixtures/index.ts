@@ -1,5 +1,9 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
+import {
+  assertCronAuthRequest,
+  isCronAuthError,
+} from "../_shared/cron-auth.mjs";
 import { footballDataRequest } from "../_shared/football-data.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
 
@@ -43,6 +47,14 @@ interface ExistingTeam {
   id: number;
 }
 
+function getRequiredEnv(name: string) {
+  const value = Deno.env.get(name);
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
 function mapStatus(
   apiStatus: string
 ): "finished" | "live" | "postponed" | "scheduled" {
@@ -76,6 +88,8 @@ serve(async (request) => {
   }
 
   try {
+    assertCronAuthRequest(request, getRequiredEnv("CRON_TOKEN"));
+
     const supabase = createAdminClient();
 
     const { data: league, error: leagueError } = await supabase
@@ -242,11 +256,12 @@ serve(async (request) => {
       { headers: CORS_HEADERS }
     );
   } catch (error) {
+    const status = isCronAuthError(error) ? 403 : 500;
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : "Unknown sync error",
       }),
-      { headers: CORS_HEADERS, status: 500 }
+      { headers: CORS_HEADERS, status }
     );
   }
 });

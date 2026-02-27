@@ -1,8 +1,5 @@
--- Schedule football-data synchronization jobs.
--- Requires pg_cron + pg_net extensions.
-
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
+-- Ensure football sync cron jobs send CRON_TOKEN bearer auth.
+-- Existing projects already applied earlier cron migrations without this header.
 
 do $$
 declare

@@ -121,6 +121,7 @@ serve(async (request) => {
       .catch(() => ({}))) as ManualSyncPayload;
     const targets = parseTargets(rawPayload);
     const projectUrl = getRequiredEnv("SUPABASE_URL");
+    const cronToken = getRequiredEnv("CRON_TOKEN");
 
     const results: Record<
       string,
@@ -136,7 +137,10 @@ serve(async (request) => {
       const response = await fetch(
         `${projectUrl}/functions/v1/${functionName}`,
         {
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            Authorization: `Bearer ${cronToken}`,
+            "Content-Type": "application/json",
+          },
           method: "POST",
         }
       );
@@ -168,10 +172,20 @@ serve(async (request) => {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Manual sync failed";
-    const status =
-      message === "Admin access required" || message === "Unauthorized"
-        ? 403
-        : 400;
+    const isForbidden =
+      message === "Admin access required" ||
+      message === "Unauthorized" ||
+      message === "Missing or invalid Authorization header" ||
+      message === "Missing bearer token";
+    const isMissingEnv = message.startsWith(
+      "Missing required environment variable:"
+    );
+    let status = 400;
+    if (isForbidden) {
+      status = 403;
+    } else if (isMissingEnv) {
+      status = 500;
+    }
 
     return new Response(JSON.stringify({ error: message }), {
       headers: CORS_HEADERS,
