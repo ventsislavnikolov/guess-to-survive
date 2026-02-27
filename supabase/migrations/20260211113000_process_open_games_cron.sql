@@ -22,7 +22,7 @@ select
     $$
     select
       net.http_post(
-        url := 'https://jsfsbvkhffyybytasytm.supabase.co/functions/v1/process-open-games',
+        url := 'https://ixgzqkhtyrcvdxsjhvwx.supabase.co/functions/v1/process-open-games',
         headers := jsonb_build_object(
           'Content-Type',
           'application/json',

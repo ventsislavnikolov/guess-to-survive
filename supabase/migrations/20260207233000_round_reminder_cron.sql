@@ -22,7 +22,7 @@ select
     $$
     select
       net.http_post(
-        url := 'https://jsfsbvkhffyybytasytm.supabase.co/functions/v1/send-round-reminders',
+        url := 'https://ixgzqkhtyrcvdxsjhvwx.supabase.co/functions/v1/send-round-reminders',
         headers := jsonb_build_object(
           'Content-Type',
           'application/json',

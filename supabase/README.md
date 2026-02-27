@@ -3,8 +3,8 @@
 Active project for this repository:
 
 - Name: `guess-to-survive`
-- Project ref: `jsfsbvkhffyybytasytm`
-- URL: `https://jsfsbvkhffyybytasytm.supabase.co`
+- Project ref: `ixgzqkhtyrcvdxsjhvwx`
+- URL: `https://ixgzqkhtyrcvdxsjhvwx.supabase.co`
 - Region: `eu-west-1`
 
 ## Notes
