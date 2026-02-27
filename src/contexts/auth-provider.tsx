@@ -22,6 +22,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
         data: { session: currentSession },
       } = await supabase.auth.getSession();
 
+      if (currentSession?.access_token) {
+        const { error: userError } = await supabase.auth.getUser(
+          currentSession.access_token
+        );
+        if (userError) {
+          await supabase.auth.signOut({ scope: "local" });
+          if (!active) {
+            return;
+          }
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+      }
+
       if (!active) {
         return;
       }
