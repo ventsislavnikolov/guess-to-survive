@@ -62,7 +62,7 @@
     "@vitejs/plugin-react": "^5.1.4",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
-    "nyc": "^17.1.0",
+    "nyc": "^18.0.0",
     "semantic-release": "^25.0.3",
     "semantic-release-ado": "^1.4.0",
     "shadcn": "^3.8.4",
