@@ -61,7 +61,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.7",
+    "lint-staged": "^16.3.1",
     "nyc": "^17.1.0",
     "semantic-release": "^25.0.3",
     "semantic-release-ado": "^1.4.0",
