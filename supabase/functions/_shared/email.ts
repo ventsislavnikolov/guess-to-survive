@@ -1,10 +1,10 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 interface RenderEmailInput {
-  title: string;
   body?: string | null;
   cta?: { href: string; label: string } | null;
   previewText?: string | null;
+  title: string;
 }
 
 function escapeHtml(value: string) {

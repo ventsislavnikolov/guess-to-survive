@@ -1,10 +1,10 @@
 import { createContext } from "react";
 
 export interface ConfirmDialogOptions {
-  title: string;
-  description?: string;
-  confirmText?: string;
   cancelText?: string;
+  confirmText?: string;
+  description?: string;
+  title: string;
   variant?: "default" | "destructive";
 }
 

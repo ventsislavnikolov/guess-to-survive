@@ -14,8 +14,8 @@ type RefundScenario = "game_cancelled" | "kick_player" | "single_rebuyer";
 
 interface ProcessRefundPayload {
   gameId?: string;
-  rebuyRound?: number;
   reason?: string;
+  rebuyRound?: number;
   scenario?: RefundScenario;
   userId?: string;
 }

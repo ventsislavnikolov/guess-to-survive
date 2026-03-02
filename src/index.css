@@ -7,7 +7,6 @@
 :root {
   --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
-  font-family: var(--font-body);
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -40,12 +39,13 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  font-family: var(--font-body);
 }
 
 body {
-  margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  margin: 0;
 }
 
 .font-display {

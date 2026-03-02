@@ -30,12 +30,12 @@ export type CreateGameInput = Pick<
 export interface GameFilters {
   maxEntryFee?: number;
   minEntryFee?: number;
+  page?: number;
+  pageSize?: number;
   paymentType?: "all" | "free" | "paid";
   sortBy?: "most_players" | "newest" | "starting_soonest";
   status?: GameRow["status"];
   visibility?: GameRow["visibility"];
-  page?: number;
-  pageSize?: number;
 }
 
 export interface GamesResult {
