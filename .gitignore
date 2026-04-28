@@ -31,3 +31,8 @@ supabase/.temp/
 
 # TypeScript build artifacts
 tsconfig.tsbuildinfo
+
+.env*
+.flaskenv*
+!.env.project
+!.env.vault
